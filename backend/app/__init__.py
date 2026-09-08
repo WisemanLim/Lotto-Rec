@@ -1,0 +1,1 @@
+"""Lotto-Rec backend package."""
