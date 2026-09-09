@@ -42,6 +42,17 @@ def recommend(body: RecommendIn, session: Session = Depends(get_session)) -> dic
         raise HTTPException(400, str(e)) from e
 
 
+class AutoRegisterIn(BaseModel):
+    target_draw_no: int | None = Field(None, ge=1, description="미지정 시 최신 회차 + 1")
+    seed: int | None = Field(None, ge=0, description="미지정 시 무작위(응답에 사용 seed 포함)")
+
+
+@router.post("/auto-register")
+def auto_register(body: AutoRegisterIn, session: Session = Depends(get_session)) -> dict:
+    """S4.10 — 1..P 중 5개 무작위 추출을 대상 회차 수만큼 반복 → 빈도 상위 5 위치 → 전략별 최신 batch 티켓 등록."""
+    return rsvc.auto_register(session, target_draw_no=body.target_draw_no, seed=body.seed)
+
+
 @router.get("/history")
 def history(
     limit: int = Query(200, ge=1, le=50000, description="표시 개수 (전체 = 50000)"),

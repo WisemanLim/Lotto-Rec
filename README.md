@@ -83,10 +83,10 @@ make local-stop
 | 데이터 | `POST /data/import` (xlsx/csv 증분, `?overwrite`) · `POST /data/draws` (단일 회차) · `GET /data/draws[/{n}]` · `GET /data/summary` · `GET /data/imports` |
 | 분석 | `POST /analysis/runs` {cohort A\|B\|ALL, preset, alpha?, correction?, seed?, mc_iterations?, sync?} · `GET /analysis/runs[/latest\|/{id}]` · `GET /analysis/runs/{id}/{section}` (summary, frequency, frequency_bonus, global, pairs, network, itemsets, groups, temporal, winners_model, null_summary, **diff_vs_previous**) · `DELETE /analysis/runs/{id}` · `POST /analysis/itemsets/query` {items \| target+given} |
 | 검증 | `POST /validation/runs` {strategies?, tickets_per_draw?, from_draw?, to_draw?, seed?, insert_draws, sync?} · `GET /validation/runs[/latest\|/{id}]` · `GET /validation/runs/{id}/{kind}` (meta, backtest, scoring, replication, homogeneity) |
-| 추천 | `GET /recommend/strategies` · `POST /recommend` {strategy, count?, seed?, max_shared?, include_control, save} → sets[].params_used·experiment, analysis_basis · `GET /recommend/history?origin=user\|backtest\|all&limit(≤50000)&offset&strategy&batch_id&target_draw_no` · `GET /recommend/history/summary?origin=` |
+| 추천 | `GET /recommend/strategies` · `POST /recommend` {strategy, count?, seed?, max_shared?, include_control, save} → sets[].params_used·experiment, analysis_basis, tickets[].`past_wins`(과거 1·2등 일치 회차, S4.9) · `GET /recommend/history?origin=user\|backtest\|all&limit(≤50000)&offset&strategy&batch_id&target_draw_no`(행마다 `past_wins`) · `GET /recommend/history/summary?origin=` · `POST /recommend/auto-register` {target_draw_no?, seed?} → 1..P 중 5개 무작위 추출 × 대상 회차 수 → 빈도 상위 5 위치의 전략별 최신 batch 티켓을 내 번호로 등록(중복 건너뜀, S4.10) |
 | 실험(전략 개선 루프) | `GET /experiments/strategy-params` · `POST /experiments/runs` {strategy, base_params?, search random\|coordinate, n_candidates, tune_from/to, holdout_from/to, tickets_per_draw, seed, sync} · `GET /experiments/runs[?strategy]` · `GET /experiments/runs/{id}` · `GET /experiments/lineage?strategy=` · `GET /experiments/active` · `POST /experiments/runs/{id}/activate` · `POST /experiments/deactivate?strategy=` · `DELETE /experiments/runs/{id}` |
 | 사용자 | `POST /user/tickets/evaluate` · `POST /user/tickets` · `GET /user/tickets` · `DELETE /user/tickets/{id}` |
-| 성과 추적 | `GET /tracking/summary?origin=user\|backtest` · `GET /tracking/outcomes?draw_no&strategy&source&origin&limit(≤50000)&offset` · `GET /tracking/outcomes/summary` · `GET /tracking/pending` · `POST /tracking/evaluate/{draw_no}` |
+| 성과 추적 | `GET /tracking/summary?origin=user\|backtest` · `GET /tracking/outcomes?draw_no&strategy&source&origin&limit(≤50000)&offset`(행마다 `past_wins`) · `GET /tracking/outcomes/summary` · `GET /tracking/pending` · `POST /tracking/evaluate/{draw_no}` |
 
 예시 (군 A 분석, 실제 응답 요약):
 
@@ -138,6 +138,10 @@ curl -s localhost:8000/api/v1/analysis/runs/<run_id>/summary | jq .kpi
 | impl/11th | 용어 툴팁(`Term`, 65 용어·165 적용)·용어 사전 `/glossary` | PASS 5/5 (vitest 28) |
 | impl/12th | 표시 시간대 KST(`LOTTO_TIMEZONE`, `to_iso`) | PASS 6/6 (pytest 56) |
 | impl/13th | OpenAPI 계약 테스트(42 경로 스냅샷·응답 형태) · PRD 수용기준/로드맵 현황 | PASS 4/4 (pytest 59) |
+| impl/14th | S4.9 추천 티켓의 과거 1·2등 일치 회차 `(386)` 표시(추천 카드·이력·성과추적 티켓 열, 작은 회색 글씨) | PASS 5/5 (pytest 61, vitest 30) |
+| impl/15th | S4.10 추천 이력 '내 번호로 자동 등록'(무작위 빈도 상위 5 위치 → 전략별 최신 batch 티켓 등록, `POST /recommend/auto-register`) | PASS 5/5 (pytest 62, vitest 31) |
+| impl/16th | S4.7/S4.10 UX — 자동 등록 규칙은 버튼 툴팁만, 추천 이력 행 '내 번호로 등록'은 확인 팝업 없이 즉시 | PASS 4/4 (pytest 62, vitest 31) |
+| impl/17th | S5.5 내 번호 '등록된 번호로 추첨 시도' — 1..N(저장 개수) 무작위 빈도 규칙(`lib/lottery.ts`)으로 5장 ★ 표시, DB 저장 없음 | PASS 6/6 (pytest 62, vitest 34) |
 
 ```bash
 make test                      # 전체

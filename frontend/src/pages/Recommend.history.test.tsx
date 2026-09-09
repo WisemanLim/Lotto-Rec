@@ -46,9 +46,10 @@ test('추천 이력 필터 바와 건수 요약이 표시되고 limit 이 전달
   expect(calls.some((u) => /\/recommend\/history\?.*limit=20/.test(u) && /origin=user/.test(u))).toBe(true);
 });
 
-test('추천 이력 행의 "내 번호로 등록" 버튼이 POST /user/tickets 를 호출한다', async () => {
+test('추천 이력 행의 "내 번호로 등록" 버튼이 확인 팝업 없이 POST /user/tickets 를 호출한다', async () => {
   const { fireEvent } = await import('@testing-library/react');
-  vi.stubGlobal('confirm', vi.fn(() => true));
+  const confirmSpy = vi.fn(() => false);
+  vi.stubGlobal('confirm', confirmSpy);
   const posts: { url: string; body: unknown }[] = [];
   vi.stubGlobal(
     'fetch',
@@ -77,7 +78,55 @@ test('추천 이력 행의 "내 번호로 등록" 버튼이 POST /user/tickets �
   const btn = await screen.findByRole('button', { name: '내 번호로 등록 1 2 3 4 5 6' });
   fireEvent.click(btn);
   await waitFor(() => expect(posts.length).toBe(1));
+  expect(confirmSpy).not.toHaveBeenCalled();
   expect(posts[0].body).toMatchObject({ numbers: [1, 2, 3, 4, 5, 6], target_draw_no: 1241 });
   expect(String((posts[0].body as { label: string }).label)).toMatch(/^추천 .*#1$/);
   await waitFor(() => expect(screen.getByText(/내 번호 #77 등록됨/)).toBeInTheDocument());
+});
+
+test('"내 번호로 자동 등록" 버튼이 필터 초기화 우측에 있고 POST /recommend/auto-register 후 결과 요약을 표시한다 (S4.10)', async () => {
+  const { fireEvent } = await import('@testing-library/react');
+  vi.stubGlobal('confirm', vi.fn(() => true));
+  const posts: { url: string; body: unknown }[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (u: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(u);
+      if (init?.method === 'POST' && url.includes('/recommend/auto-register')) {
+        posts.push({ url, body: JSON.parse(String(init.body)) });
+        return new Response(
+          JSON.stringify({
+            target_draw_no: 1241, rounds: 1241, pool: 10, pick: 5, seed: 42, counts: {}, selected: [2, 4, 5, 7, 9],
+            strategies: [{ strategy: 'uniform', label: '균등', batch_id: 'abcdefgh-1', n_tickets: 10, registered: [{ position: 2, rec_id: 12, ticket: [1, 2, 3, 4, 5, 6], ticket_id: 90 }], skipped_existing: [], missing_positions: [] }],
+            total_registered: 1, total_skipped: 0, policy: 'p',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return fakeFetch(url);
+    }),
+  );
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <RunProvider>
+          <Recommend />
+        </RunProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const group = screen.getByRole('group', { name: '추천 이력 필터' });
+  const buttons = Array.from(group.querySelectorAll('button')).map((b) => b.textContent);
+  expect(buttons.indexOf('내 번호로 자동 등록')).toBe(buttons.indexOf('필터 초기화') + 1);
+  const autoBtn = screen.getByRole('button', { name: '내 번호로 자동 등록' });
+  expect(autoBtn).toHaveAttribute('title', expect.stringMatching(/1\.\.P 중 5개 무작위 추출/));
+  expect(group.textContent).not.toMatch(/빈도 상위 5 위치의 전략별 최신 티켓 등록/);
+  fireEvent.click(screen.getByRole('button', { name: '내 번호로 자동 등록' }));
+  await waitFor(() => expect(posts.length).toBe(1));
+  expect(posts[0].body).toEqual({});
+  const status = await screen.findByRole('status', { name: '자동 등록 결과' });
+  expect(status.textContent).toMatch(/대상 1241회/);
+  expect(status.textContent).toMatch(/2, 4, 5, 7, 9/);
+  expect(status.textContent).toMatch(/등록 1장/);
 });

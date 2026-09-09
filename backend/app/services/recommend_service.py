@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import uuid
 
 import numpy as np
@@ -17,6 +18,7 @@ from app.db.models import Recommendation, UserTicket
 from app.services import analysis_service as asvc
 from app.services import experiment_service as xsvc
 from app.services.draws import DrawSet, load_draws, max_draw_no
+from app.services.past_wins import PastWinIndex
 
 
 def build_context(session: Session, *, draw_to: int | None = None, use_winners_model: bool = True) -> strat.Context:
@@ -53,6 +55,7 @@ def recommend(
         raise ValueError("추천 개수는 1~50")
     seed = settings.lotto_random_seed if seed is None else seed
     ctx = build_context(session)
+    past = PastWinIndex(session)
     batch_id = str(uuid.uuid4())
     out_sets = []
     strategies = [strategy] + (["uniform"] if include_control and strategy != "uniform" else [])
@@ -92,7 +95,7 @@ def recommend(
                 session.add(rec)
                 session.flush()
                 rec_id = rec.rec_id
-            rows.append({"rec_id": rec_id, "ticket": t, "scorecard": c})
+            rows.append({"rec_id": rec_id, "ticket": t, "scorecard": c, "past_wins": past.lookup(t)})
         out_sets.append(
             {
                 "strategy": s,
@@ -172,20 +175,118 @@ def evaluate_user_ticket(session: Session, numbers: list[int], bonus: int | None
 
 
 def save_user_ticket(
-    session: Session, numbers: list[int], bonus: int | None, label: str | None, target_draw_no: int | None
+    session: Session,
+    numbers: list[int],
+    bonus: int | None,
+    label: str | None,
+    target_draw_no: int | None,
+    *,
+    ctx: strat.Context | None = None,
+    commit: bool = True,
 ) -> UserTicket:
-    mx = max_draw_no(session) or 0
-    card = evaluate_user_ticket(session, numbers, bonus)
+    ctx = ctx or build_context(session)
+    card = scorecard(
+        numbers,
+        ctx.incidence,
+        ctx.extra["draws"],
+        null_features=ctx.null_features,
+        winners_model=ctx.winners_model,
+        draw_no_next=ctx.draw_no_next,
+        bonus=bonus,
+    )
     ut = UserTicket(
         numbers=sorted(numbers),
         bonus=bonus,
         label=label,
-        target_draw_no=target_draw_no or mx + 1,
+        target_draw_no=target_draw_no or ctx.draw_no_next,
         scorecard=_compact(card),
     )
     session.add(ut)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     return ut
+
+
+def auto_register(
+    session: Session, *, target_draw_no: int | None = None, seed: int | None = None, pick: int = 5
+) -> dict:
+    """S4.10 — 1..P 중 pick 개 무작위 추출을 대상 회차 수만큼 반복 → 빈도 상위 pick 위치 →
+    전략별 최신 batch 티켓을 내 번호로 등록. 동일 번호·대상 회차가 이미 있으면 건너뜀."""
+    ctx = build_context(session)
+    target = target_draw_no or ctx.draw_no_next
+    pool = settings.lotto_number_recommendation_count
+    pick = min(pick, pool)
+    if seed is None:
+        seed = secrets.randbits(31)
+    rng = np.random.default_rng(seed)
+    counts = np.zeros(pool + 1, dtype=np.int64)
+    for _ in range(target):
+        counts[rng.choice(np.arange(1, pool + 1), size=pick, replace=False)] += 1
+    order = sorted(range(1, pool + 1), key=lambda n: (-int(counts[n]), n))
+    selected = sorted(order[:pick])
+
+    recs = session.scalars(
+        select(Recommendation)
+        .where(Recommendation.origin == "user", Recommendation.target_draw_no == target)
+        .order_by(Recommendation.rec_id)
+    ).all()
+    existing = {
+        tuple(u.numbers)
+        for u in session.scalars(select(UserTicket).where(UserTicket.target_draw_no == target)).all()
+    }
+    by_strategy: dict[str, dict[str, list[Recommendation]]] = {}
+    for r in recs:
+        by_strategy.setdefault(r.strategy, {}).setdefault(r.batch_id, []).append(r)
+
+    out_strats = []
+    total_registered = total_skipped = 0
+    for s_id, batches in by_strategy.items():
+        latest = max(batches.values(), key=lambda rows: rows[-1].rec_id)
+        label = strat.STRATEGIES.get(s_id, {}).get("label", s_id)
+        registered, skipped, missing = [], [], []
+        for pos in selected:
+            if pos > len(latest):
+                missing.append(pos)
+                continue
+            r = latest[pos - 1]
+            key = tuple(sorted(r.ticket))
+            if key in existing:
+                skipped.append({"position": pos, "rec_id": r.rec_id, "ticket": r.ticket})
+                continue
+            ut = save_user_ticket(
+                session, r.ticket, None, f"추천 {label} #{r.rec_id}", target, ctx=ctx, commit=False
+            )
+            existing.add(key)
+            registered.append({"position": pos, "rec_id": r.rec_id, "ticket": r.ticket, "ticket_id": ut.ticket_id})
+        total_registered += len(registered)
+        total_skipped += len(skipped)
+        out_strats.append(
+            {
+                "strategy": s_id,
+                "label": label,
+                "batch_id": latest[0].batch_id,
+                "n_tickets": len(latest),
+                "registered": registered,
+                "skipped_existing": skipped,
+                "missing_positions": missing,
+            }
+        )
+    session.commit()
+    return {
+        "target_draw_no": target,
+        "rounds": target,
+        "pool": pool,
+        "pick": pick,
+        "seed": seed,
+        "counts": {str(n): int(counts[n]) for n in range(1, pool + 1)},
+        "selected": selected,
+        "strategies": out_strats,
+        "total_registered": total_registered,
+        "total_skipped": total_skipped,
+        "policy": "위치 선택은 오락용 규칙이며 어떤 티켓도 당첨확률은 동일하다.",
+    }
 
 
 def _history_stmt(origin: str, strategy: str | None, batch_id: str | None, target_draw_no: int | None):  # noqa: ANN202
@@ -214,12 +315,14 @@ def list_recommendations(
     """추천 이력 — 필터(전략·batch·대상 회차) + offset 페이징 (PRD S4.6)."""
     stmt = _history_stmt(origin, strategy, batch_id, target_draw_no)
     rows = session.scalars(stmt.order_by(Recommendation.rec_id.desc()).offset(offset).limit(limit)).all()
+    past = PastWinIndex(session)
     return [
         {
             "rec_id": r.rec_id,
             "batch_id": r.batch_id,
             "strategy": r.strategy,
             "ticket": r.ticket,
+            "past_wins": past.lookup(r.ticket),
             "seed": r.seed,
             "target_draw_no": r.target_draw_no,
             "origin": r.origin,

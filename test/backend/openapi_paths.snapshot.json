@@ -37,6 +37,7 @@
  "POST /api/v1/experiments/runs",
  "POST /api/v1/experiments/runs/{experiment_id}/activate",
  "POST /api/v1/recommend",
+ "POST /api/v1/recommend/auto-register",
  "POST /api/v1/tracking/evaluate/{draw_no}",
  "POST /api/v1/user/tickets",
  "POST /api/v1/user/tickets/evaluate",

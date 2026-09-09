@@ -30,3 +30,19 @@ describe('LottoBall', () => {
     expect(screen.getAllByLabelText(/^\d+$/)).toHaveLength(6);
   });
 });
+
+describe('PastWinTags (S4.9)', () => {
+  test('past_wins 가 있으면 "(회차)" 를 작은 회색 글씨로, 툴팁에 등수를 표시한다', () => {
+    render(<BallRow numbers={[1, 2, 3, 4, 5, 6]} size="sm" pastWins={[{ draw_no: 386, rank: 1 }, { draw_no: 712, rank: 2 }]} />);
+    const wrap = screen.getByLabelText('과거 1·2등 일치 회차');
+    expect(wrap.className).toMatch(/text-\[10px\]/);
+    expect(wrap.className).toMatch(/text-neutral-400/);
+    expect(screen.getByText('(386)')).toHaveAttribute('title', '386회 1등 조합과 일치');
+    expect(screen.getByText('(712)')).toHaveAttribute('title', '712회 2등 조합과 일치');
+  });
+
+  test('past_wins 가 없거나 비면 태그를 렌더하지 않는다', () => {
+    render(<BallRow numbers={[1, 2, 3, 4, 5, 6]} pastWins={[]} />);
+    expect(screen.queryByLabelText('과거 1·2등 일치 회차')).toBeNull();
+  });
+});

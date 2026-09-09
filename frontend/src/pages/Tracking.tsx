@@ -193,7 +193,7 @@ export default function Tracking() {
     { key: 'draw_no', label: '회차', align: 'right' },
     { key: 'strategy', label: '전략', render: (r) => labelOf(r.strategy) },
     { key: 'origin', label: '출처', render: (r) => `${r.origin}/${r.source}` },
-    { key: 'ticket', label: '티켓', sortable: false, render: (r) => <BallRow numbers={r.ticket} size="sm" /> },
+    { key: 'ticket', label: '티켓', sortable: false, render: (r) => <BallRow numbers={r.ticket} size="sm" pastWins={r.past_wins} /> },
     { key: 'main_matches', label: '일치', align: 'right' },
     { key: 'bonus_match', label: '보너스', render: (r) => (r.bonus_match ? '○' : '—') },
     { key: 'rank', label: <Term id="rank_rules" icon>등수</Term>, align: 'right', render: (r) => (r.rank ? `${r.rank}등` : '낙첨') },

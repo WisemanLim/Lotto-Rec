@@ -8,6 +8,7 @@ import ScorecardView from '../components/ScorecardView';
 import Term from '../components/Term';
 import { Empty, ErrorBox, Field, FormSlot, Loading, PageTitle, Section, btnCls, btnDangerCls, btnGhostCls, inputCls } from '../components/States';
 import { fmtDate, fmtNum, fmtP, fmtWon } from '../lib/format';
+import { pickPositions, type LotteryPick } from '../lib/lottery';
 
 const NUMS = Array.from({ length: 45 }, (_, i) => i + 1);
 
@@ -49,6 +50,13 @@ export default function MyNumbers() {
   const ready = picked.length === 6;
   const body: TicketIn = { numbers: picked, bonus };
   const nextDraw = (summary.data?.max_draw ?? 0) + 1;
+  // S5.5 등록된 번호로 추첨 시도 — 1..N(저장 개수) 무작위 빈도 규칙, 화면 상태만(DB 저장 없음)
+  const [lottery, setLottery] = useState<{ pick: LotteryPick; ids: Set<number> } | null>(null);
+  const tryLottery = () => {
+    const list = tickets.data ?? [];
+    const pick = pickPositions(list.length, 5, nextDraw);
+    setLottery({ pick, ids: new Set(pick.selected.map((pos) => list[pos - 1].ticket_id)) });
+  };
 
   return (
     <div className="space-y-4">
@@ -117,7 +125,26 @@ export default function MyNumbers() {
         </Section>
       )}
 
-      <Section title="저장된 번호">
+      <Section
+        title="저장된 번호"
+        right={
+          <button
+            type="button"
+            className={`${btnCls} bg-emerald-700 hover:bg-emerald-800`}
+            disabled={!tickets.data?.length}
+            title={`1..N(저장된 번호 ${tickets.data?.length ?? 0}개) 중 5개 무작위 추출 × 다음 회차 ${nextDraw}회 → 빈도 상위 5 위치를 ★ 표시 (화면 표시만, 저장 없음)`}
+            onClick={tryLottery}
+          >
+            등록된 번호로 추첨 시도
+          </button>
+        }
+      >
+        {lottery && (
+          <p className="mb-2 text-xs text-emerald-800 dark:text-emerald-200" role="status" aria-label="추첨 시도 결과">
+            추첨 시도 — {lottery.pick.rounds.toLocaleString()}회 반복(1..{lottery.pick.pool} 중 {lottery.pick.pick}개) · 선택 위치{' '}
+            <span className="font-semibold tabular-nums">{lottery.pick.selected.join(', ')}</span> · ★ {lottery.ids.size}장 (화면 표시만, 저장되지 않음)
+          </p>
+        )}
         {tickets.isLoading && <Loading />}
         {tickets.isError && <ErrorBox error={tickets.error} />}
         {tickets.data && tickets.data.length === 0 && <Empty>저장된 번호 없음</Empty>}
@@ -144,9 +171,16 @@ export default function MyNumbers() {
                   ))
                 )}
               </span>
-              <button type="button" className={`${btnDangerCls} ml-auto`} onClick={() => remove.mutate(t.ticket_id)} disabled={remove.isPending}>
-                삭제
-              </button>
+              <span className="ml-auto inline-flex items-center gap-2">
+                {lottery?.ids.has(t.ticket_id) && (
+                  <span className="text-base leading-none text-amber-500" role="img" aria-label="추첨 선택" title="추첨 시도로 선택됨 (화면 표시만)">
+                    ★
+                  </span>
+                )}
+                <button type="button" className={btnDangerCls} onClick={() => remove.mutate(t.ticket_id)} disabled={remove.isPending}>
+                  삭제
+                </button>
+              </span>
             </div>
           ))}
         </div>

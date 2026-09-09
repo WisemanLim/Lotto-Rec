@@ -1,3 +1,4 @@
+import type { PastWin } from '../api/client';
 import { BALL_HEX, ballTone } from '../lib/colors';
 
 interface Props {
@@ -47,7 +48,31 @@ export default function LottoBall({ n, size = 'md', bonus, dim, onClick, selecte
   );
 }
 
-export function BallRow({ numbers, bonus, size = 'md' }: { numbers: number[]; bonus?: number | null; size?: Props['size'] }) {
+/** 과거 1·2등 일치 회차 태그 `(386)` — 기본 글자보다 작고 회색으로 흐릿하게 (PRD S4.9). */
+export function PastWinTags({ wins }: { wins?: PastWin[] | null }) {
+  if (!wins?.length) return null;
+  return (
+    <span className="ml-1 inline-flex items-center gap-1 text-[10px] text-neutral-400/80 dark:text-neutral-500" aria-label="과거 1·2등 일치 회차">
+      {wins.map((w) => (
+        <span key={`${w.draw_no}-${w.rank}`} title={`${w.draw_no}회 ${w.rank}등 조합과 일치`}>
+          ({w.draw_no})
+        </span>
+      ))}
+    </span>
+  );
+}
+
+export function BallRow({
+  numbers,
+  bonus,
+  size = 'md',
+  pastWins,
+}: {
+  numbers: number[];
+  bonus?: number | null;
+  size?: Props['size'];
+  pastWins?: PastWin[] | null;
+}) {
   return (
     <span className="inline-flex items-center gap-1">
       {numbers.map((n) => (
@@ -59,6 +84,7 @@ export function BallRow({ numbers, bonus, size = 'md' }: { numbers: number[]; bo
           <LottoBall n={bonus} size={size} bonus />
         </>
       )}
+      <PastWinTags wins={pastWins} />
     </span>
   );
 }

@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 | :-- | :-- |
-| 문서 버전 | 1.4 (living-doc: 수용기준·로드맵 현황, OpenAPI 계약 테스트) |
+| 문서 버전 | 1.8 (S5.5 등록된 번호로 추첨 시도) |
 | 작성일 | 2026-09-08 |
 | 상태 | Draft → 구현 중 보완 (living document) |
 | 근거 문서 | `.docs/Perplexity-로또번호 무작위 추출 통계분석.md`, `.docs/lotto(~1240).xlsx` |
@@ -379,8 +379,10 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 - S4.4 각 추천 티켓에 스코어카드(§E5) 자동 첨부, 사용 전략·seed·run_id·**대상 회차(생성 시점 최신 회차 + 1)** 표시. 생성 즉시 저장되어 §E8 추적 대상이 된다. CSV 내보내기.
 - S4.5 추천 화면 상단에 해당 전략의 **군 B backtest 성과 요약**(균등 대비)을 반드시 표시.
 - S4.6 (v0.6) 추천 이력(저장된 티켓)은 **전체 조회 가능**해야 한다: 전략·대상 회차·batch 필터(성과 추적과 동일 방식), 표시 개수 20/50/100/전체 선택, 서버 측 필터·offset 페이징, 필터 결과 건수와 전략별 건수 요약 표시, CSV 내보내기. (v0.8) **출처 필터** `origin=user|backtest|all`(기본 user) — 검증 replay 가 생성한 시뮬레이션 티켓(origin=backtest)도 조회 가능하며 행에 출처를 표시한다. "전체" 표시 = API limit 50,000(현재 데이터 19,220장 수용), 표는 200행 단위 "더 보기", CSV 는 로드된 전체.
-- S4.7 (v0.6) 추천 결과의 각 티켓 카드와 추천 이력의 각 행에서 **'내 번호로 등록'** 가능(`POST /user/tickets` 재사용, label = `추천 <전략> #rec_id`, target_draw_no 승계). 등록 후 성과 추적 대상(전략 `user`)이 되며 중복 등록은 확인 문구로 안내한다.
+- S4.7 (v0.6) 추천 결과의 각 티켓 카드와 추천 이력의 각 행에서 **'내 번호로 등록'** 가능(`POST /user/tickets` 재사용, label = `추천 <전략> #rec_id`, target_draw_no 승계). 등록 후 성과 추적 대상(전략 `user`)이 된다. (v1.7) 추천 카드는 확인 대화상자 후 등록, **추천 이력 행은 확인 없이 즉시 등록**한다(등록 완료 표시·내 번호 링크로 피드백).
 - S4.8 (v0.7) 추천 응답은 사용된 파라미터·활성 실험(세대·홀드아웃 성과)·분석 근거(군 A run, 이력 T, 상위 |z| 번호)를 포함하고 UI 에 표시한다(E9 S9.4).
+- S4.9 (v1.5, 사용자 요청) **과거 1·2등 일치 표시**: 추천 티켓의 6개 번호가 적재된 과거 회차 중 어느 회차의 1등(본번호 6개 동일) 또는 2등(본번호 5개 + 해당 회차 보너스)에 해당하면, 그 회차 번호를 **'티켓' 열(추천 카드·추천 이력·성과 추적 결과 표)** 에 공 옆에 `(386)` 형식으로 표시한다. 글씨는 기본 데이터보다 작고 회색 계통으로 흐릿하게, 툴팁에 등수(`386회 1등`)를 둔다. 복수 회차는 공백으로 나열한다. 응답 필드 `past_wins: [{draw_no, rank}]`(rank ∈ {1,2}, 회차 오름차순)를 `POST /recommend` 티켓·`GET /recommend/history` 행·`GET /tracking/outcomes` 행에 포함한다. 통계적 의미는 없음(균등 추첨에서 어느 티켓이든 동일 확률)을 §4.11 고지에 따라 해석한다.
+- S4.10 (v1.6, 사용자 요청) **내 번호로 자동 등록**: 추천 이력 필터 바의 '필터 초기화' 우측 버튼. 동작 — (a) 대상 회차 $D$(필터의 대상 회차, 미선택 시 최신 회차+1)를 정하고, (b) $1..P$($P$ = 추천 개수 `LOTTO_NUMBER_RECOMMENDATION_COUNT`, 기본 10)에서 서로 다른 5개를 무작위로 뽑는 시행을 **$D$ 회 반복**해 번호별 출현 빈도를 집계, (c) 빈도 상위 5개(동률은 작은 번호 우선)를 **티켓 위치**로 선택, (d) 대상 회차 $D$ 의 사용자 생성(origin=user) 추천 이력에서 **전략별 최신 batch** 의 티켓을 rec_id 오름차순 1..n 으로 번호 매겨 선택 위치의 티켓을 `POST /user/tickets` 와 동일 규칙(label `추천 <전략> #rec_id`, target_draw_no=$D$)으로 등록한다. 같은 번호·대상 회차가 이미 등록돼 있으면 건너뛰고(중복 방지), 위치 > n 인 항목은 누락으로 보고한다. API `POST /recommend/auto-register` {target_draw_no?, seed?} → {selected, counts, rounds, seed, strategies[] (registered/skipped/missing)}. seed 미지정 시 무작위이며 사용된 seed 를 응답에 남겨 재현 가능. 선택 절차는 오락용 규칙일 뿐 어떤 티켓도 당첨확률이 같다(§4.11). (v1.7) 규칙 설명은 버튼 하단 문구가 아니라 **버튼 마우스오버 툴팁**(`title`)으로만 표시한다.
 
 ### E5. 사용자 예측(통계기반 평가) (P0)
 
@@ -388,6 +390,7 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 - S5.2 스코어카드: 각 번호의 빈도 z/q, 포함된 15개 쌍의 $\mathrm{Lift}^*$·q, 합·홀짝·저고·구간·연속·끝수 특성의 $H_0$ 분위수, 과거 동일 조합·5개 일치 이력, 예상 일치수 분포(=4.10(a), 모든 조합 동일임을 명시), 당첨자수 모형 기반 예상 공유자 수와 상대 지수.
 - S5.3 "이 조합은 통계적으로 특이한가?"를 MC 기반 전형성 p-value로 답하되, 특이성이 당첨확률과 무관함을 함께 표시.
 - S5.4 사용자 저장 목록(로컬 DB), 이후 회차 결과와 자동 대조.
+- S5.5 (v1.8, 사용자 요청) **등록된 번호로 추첨 시도**: '저장된 번호' 타이틀 우측 버튼. S4.10 과 같은 규칙이되 위치 풀이 $1..N$($N$ = 현재 저장된 번호 개수, 화면에 로드된 목록 순서 = 위치)이며, $\min(5,N)$개 비복원 추출을 다음 회차 번호(최신 회차+1)만큼 반복해 빈도 상위 $\min(5,N)$ 위치를 선택한다. 선택된 저장 번호는 '삭제' 버튼 좌측에 **별(★) 아이콘**으로 표시하며, 선택 결과는 **DB 에 저장하지 않고 화면 상태로만** 유지한다(재클릭 시 재추첨, 새로고침 시 소멸). 규칙 설명은 버튼 툴팁. 추천 이력의 '내 번호 보기' 링크(S4.7)로 진입해 저장된 번호를 확인할 수 있어야 한다.
 
 ### E6. 대시보드 (P0~P1)
 
@@ -602,7 +605,9 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | GET | `/api/v1/analysis/runs/{run_id}/network` | 노드/엣지(JSON) |
 | POST | `/api/v1/validation/runs` | {run_id_A, strategies[], tickets_per_draw} → validation_id |
 | GET | `/api/v1/validation/runs/{id}` | 재현성·동질성·backtest·scoring 결과 |
-| POST | `/api/v1/recommend` | {strategy, count?, seed?, coverage?, constraints?} → tickets + scorecards + backtest 요약 |
+| POST | `/api/v1/recommend` | {strategy, count?, seed?, coverage?, constraints?} → tickets + scorecards + `past_wins`(과거 1·2등 회차, S4.9) + backtest 요약 |
+| POST | `/api/v1/recommend/auto-register` | {target_draw_no?, seed?} → 무작위 빈도 상위 5 위치 → 전략별 최신 batch 티켓을 내 번호로 등록 (S4.10) |
+| GET | `/api/v1/recommend/history` · `/summary` | 추천 이력(필터: origin, strategy, batch_id, target_draw_no; limit ≤50000, offset) — 행마다 `past_wins` 포함 |
 | GET | `/api/v1/experiments/strategy-params` | 전략별 파라미터 스키마 |
 | POST | `/api/v1/experiments/runs` | {strategy, base_params?, parent_id?, search, n_candidates, tune_from/to, holdout_from/to, tickets_per_draw, seed, sync} → experiment |
 | GET | `/api/v1/experiments/runs[?strategy]` · `/{id}` · `/lineage?strategy=` · `/active` | 실험 목록·상세·계보(추이·Spearman)·활성 버전 |
@@ -610,7 +615,7 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | POST | `/api/v1/user/tickets/evaluate` | {numbers[6], bonus?} → 스코어카드 |
 | GET/POST/DELETE | `/api/v1/user/tickets` | 저장 목록(target_draw_no 포함) |
 | GET | `/api/v1/tracking/summary` | 전략별 누적 성과(일치수 분포·기대 대비·CI) |
-| GET | `/api/v1/tracking/outcomes` | 티켓 단위 대조 결과(필터: strategy, draw_no, source, origin; limit ≤50000, offset) |
+| GET | `/api/v1/tracking/outcomes` | 티켓 단위 대조 결과(필터: strategy, draw_no, source, origin; limit ≤50000, offset) — 행마다 `past_wins` 포함 |
 | GET | `/api/v1/tracking/outcomes/summary` | 필터 건수·회차/전략 목록·출처별 건수 |
 | GET | `/api/v1/tracking/pending` | 미추첨 대기 티켓 |
 | GET | `/api/v1/config` | 유효 설정(env) 조회 |
@@ -745,6 +750,10 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 
 | 버전 | 일자 | 내용 |
 | :-- | :-- | :-- |
+| 1.8 | 2026-09-09 | 사용자 요청: 내 번호 화면 '등록된 번호로 추첨 시도'(S5.5) — 1..N(저장 개수) 무작위 빈도 규칙으로 5개 선택, ★ 표시(UI 상태만, DB 저장 없음) |
+| 1.7 | 2026-09-09 | 사용자 요청: '내 번호로 자동 등록' 규칙 문구를 하단 힌트 → 버튼 툴팁으로, 추천 이력 행의 '내 번호로 등록'은 확인 팝업 없이 즉시 등록 (S4.7/S4.10 UX) |
+| 1.6 | 2026-09-09 | 사용자 요청: 추천 이력 '필터 초기화' 우측 '내 번호로 자동 등록' — 1..P 중 5개 무작위 추출을 대상 회차 수만큼 반복해 빈도 상위 5 위치 선택 → 전략별 최신 batch 티켓 등록 (S4.10, `POST /recommend/auto-register`) |
+| 1.5 | 2026-09-09 | 사용자 요청: 추천 티켓이 과거 회차 1·2등 조합과 일치하면 '티켓' 열에 `(회차)` 를 작고 회색으로 표시 (S4.9, `past_wins` 필드 — recommend 응답·이력·tracking outcomes) |
 | 1.4 | 2026-09-08 | PRD 잔여 스캔: OpenAPI 계약 테스트(경로 스냅샷·응답 형태) 추가, §12.3-1 수용기준 현황표, §13 로드맵 상태, Playwright(P2) 잔여 명시 |
 | 1.3 | 2026-09-08 | 사용자 요청: 시각 표시 KST(UTC+9). 원인 = SQLite 가 tz 를 버려 naive ISO 반환 → 브라우저가 로컬로 오해. 백엔드 `to_iso()` 로 UTC 오프셋 명시, `LOTTO_TIMEZONE`(.env, 기본 Asia/Seoul) → `/config.timezone` → 프론트 `fmtDate` Intl timeZone |
 | 1.2 | 2026-09-08 | 사용자 요청: 비전문가용 용어 툴팁(`Term`, 설명+위키/논문 링크) 전 화면 적용 + 용어 사전 페이지 `/glossary` |

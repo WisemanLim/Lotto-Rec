@@ -82,10 +82,10 @@ Variable names are literal English translations of the Korean terms with a `LOTT
 | Data | `POST /data/import` (xlsx/csv incremental, `?overwrite`) · `POST /data/draws` · `GET /data/draws[/{n}]` · `GET /data/summary` · `GET /data/imports` |
 | Analysis | `POST /analysis/runs` · `GET /analysis/runs[/latest|/{id}]` · `GET /analysis/runs/{id}/{section}` (summary, frequency, frequency_bonus, global, pairs, network, itemsets, groups, temporal, winners_model, null_summary, **diff_vs_previous**) · `DELETE /analysis/runs/{id}` · `POST /analysis/itemsets/query` |
 | Validation | `POST /validation/runs` · `GET /validation/runs[/latest|/{id}]` · `GET /validation/runs/{id}/{kind}` (meta, backtest, scoring, replication, homogeneity) |
-| Recommend | `GET /recommend/strategies` · `POST /recommend` (→ sets[].params_used/experiment, analysis_basis) · `GET /recommend/history?origin=user|backtest|all&…` · `GET /recommend/history/summary?origin=` |
+| Recommend | `GET /recommend/strategies` · `POST /recommend` (→ sets[].params_used/experiment, analysis_basis, tickets[].`past_wins` = past 1st/2nd-prize draws matching the ticket, S4.9) · `GET /recommend/history?origin=user|backtest|all&…` (each row carries `past_wins`) · `GET /recommend/history/summary?origin=` · `POST /recommend/auto-register` {target_draw_no?, seed?} → draw 5 of 1..P at random, repeated target-draw-number times → top-5 positions by frequency → register each strategy's latest-batch tickets at those positions as my numbers (duplicates skipped, S4.10) |
 | Experiments (improvement loop) | `GET /experiments/strategy-params` · `POST /experiments/runs` · `GET /experiments/runs[?strategy]` · `GET /experiments/runs/{id}` · `GET /experiments/lineage?strategy=` · `GET /experiments/active` · `POST /experiments/runs/{id}/activate` · `POST /experiments/deactivate` · `DELETE /experiments/runs/{id}` |
 | User | `POST /user/tickets/evaluate` · `POST /user/tickets` · `GET /user/tickets` · `DELETE /user/tickets/{id}` |
-| Tracking | `GET /tracking/summary?origin=user|backtest` · `GET /tracking/outcomes?draw_no&strategy&source&origin&limit(≤50000)&offset` · `GET /tracking/outcomes/summary` · `GET /tracking/pending` · `POST /tracking/evaluate/{draw_no}` |
+| Tracking | `GET /tracking/summary?origin=user|backtest` · `GET /tracking/outcomes?draw_no&strategy&source&origin&limit(≤50000)&offset` (each row carries `past_wins`) · `GET /tracking/outcomes/summary` · `GET /tracking/pending` · `POST /tracking/evaluate/{draw_no}` |
 
 ## Statistical engine (PRD §4)
 
@@ -115,6 +115,10 @@ Joe-adjusted χ² (J = (N−1)/(N−k)·X²), Coronel-Brizio order-statistic Q t
 | impl/11th | term tooltips (`Term`, 65 terms · 165 usages) · glossary page `/glossary` | PASS 5/5 (vitest 28) |
 | impl/12th | display timezone KST (`LOTTO_TIMEZONE`, `to_iso`) | PASS 6/6 (pytest 56) |
 | impl/13th | OpenAPI contract test (42-path snapshot · response shapes) · PRD acceptance/roadmap status | PASS 4/4 (pytest 59) |
+| impl/14th | S4.9 past 1st/2nd-prize draw tag `(386)` next to recommended tickets (recommend cards · history · tracking outcomes, small gray text) | PASS 5/5 (pytest 61, vitest 30) |
+| impl/15th | S4.10 'Auto-register as my numbers' in recommendation history (random top-5 positions → latest-batch tickets per strategy, `POST /recommend/auto-register`) | PASS 5/5 (pytest 62, vitest 31) |
+| impl/16th | S4.7/S4.10 UX — auto-register rule shown only as button tooltip; history-row 'register as my number' registers immediately without a confirm dialog | PASS 4/4 (pytest 62, vitest 31) |
+| impl/17th | S5.5 My Numbers 'Try a draw with saved numbers' — random-frequency rule over 1..N saved tickets (`lib/lottery.ts`) stars 5 tickets, UI state only (no DB write) | PASS 6/6 (pytest 62, vitest 34) |
 
 ## Layout
 

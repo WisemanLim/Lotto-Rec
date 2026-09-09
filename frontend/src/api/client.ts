@@ -635,10 +635,17 @@ export interface RecommendIn {
   save: boolean;
 }
 
+/** 과거 회차 1·2등 일치 (PRD S4.9). rank 1 = 본번호 6개 동일, 2 = 5개 + 보너스. */
+export interface PastWin {
+  draw_no: number;
+  rank: 1 | 2;
+}
+
 export interface RecommendTicket {
   rec_id: number | string | null;
   ticket: number[];
   scorecard: Scorecard;
+  past_wins?: PastWin[];
 }
 
 export interface DiffVsUniform {
@@ -694,12 +701,47 @@ export interface RecommendHistoryItem {
   batch_id: string;
   strategy: string;
   ticket: number[];
+  past_wins?: PastWin[];
   seed: number | null;
   target_draw_no: number | null;
   origin?: 'user' | 'backtest';
   scorecard: Partial<Scorecard> | null;
   params: Record<string, unknown> | null;
   created_at: string | null;
+}
+
+/** 내 번호로 자동 등록 (PRD S4.10). */
+export interface AutoRegisterIn {
+  target_draw_no?: number;
+  seed?: number;
+}
+export interface AutoRegisterTicket {
+  position: number;
+  rec_id: number;
+  ticket: number[];
+  ticket_id?: number;
+}
+export interface AutoRegisterStrategy {
+  strategy: string;
+  label: string;
+  batch_id: string;
+  n_tickets: number;
+  registered: AutoRegisterTicket[];
+  skipped_existing: AutoRegisterTicket[];
+  missing_positions: number[];
+}
+export interface AutoRegisterResult {
+  target_draw_no: number;
+  rounds: number;
+  pool: number;
+  pick: number;
+  seed: number;
+  counts: Record<string, number>;
+  selected: number[];
+  strategies: AutoRegisterStrategy[];
+  total_registered: number;
+  total_skipped: number;
+  policy: string;
 }
 
 /** 추천 이력 필터 (PRD S4.6). limit 최대 50000 = 전체. */
@@ -875,6 +917,7 @@ export interface Outcome {
   origin: string;
   draw_no: number;
   ticket: number[];
+  past_wins?: PastWin[];
   main_matches: number;
   bonus_match: boolean;
   rank: number;
@@ -960,6 +1003,7 @@ export const api = {
     history: (params?: RecommendHistoryParams) => get<RecommendHistoryItem[]>('/api/v1/recommend/history', params),
     historySummary: (params?: Omit<RecommendHistoryParams, 'limit' | 'offset'>) =>
       get<RecommendHistorySummary>('/api/v1/recommend/history/summary', params),
+    autoRegister: (body: AutoRegisterIn) => post<AutoRegisterResult>('/api/v1/recommend/auto-register', body),
   },
 
   experiments: {

@@ -13,7 +13,7 @@ import DataTable, { type Column } from '../components/DataTable';
 import { labelOf } from '../lib/labels';
 import { ErrorBox, Field, FormSlot, Loading, PageTitle, Section, btnCls, inputCls } from '../components/States';
 import { fmtCI, fmtDate, fmtNum, fmtP, fmtParams, fmtSigned } from '../lib/format';
-import type { RecommendHistoryItem } from '../api/client';
+import type { AutoRegisterResult, RecommendHistoryItem } from '../api/client';
 
 function BacktestSummary({ strategy }: { strategy: string }) {
   const latest = useQuery({ queryKey: ['validation', 'latest'], queryFn: api.validation.latest, retry: false });
@@ -59,12 +59,15 @@ export function RegisterMyNumber({
   recId,
   targetDrawNo,
   size = 'sm',
+  confirm = true,
 }: {
   numbers: number[];
   strategy: string;
   recId: number | string | null | undefined;
   targetDrawNo: number | null | undefined;
   size?: 'sm' | 'xs';
+  /** false 면 확인 대화상자 없이 즉시 등록 (추천 이력 행, S4.7 v1.7). */
+  confirm?: boolean;
 }) {
   const qc = useQueryClient();
   const m = useMutation({
@@ -96,7 +99,7 @@ export function RegisterMyNumber({
         className={`rounded border border-blue-600 ${cls} text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:text-blue-300 dark:hover:bg-blue-950`}
         disabled={m.isPending}
         onClick={() => {
-          if (window.confirm(`[${numbers.join(', ')}] 를 내 번호로 등록할까요?\n대상 회차 ${targetDrawNo ?? '다음 회차'} · 성과 추적 대상이 됩니다.`)) m.mutate();
+          if (!confirm || window.confirm(`[${numbers.join(', ')}] 를 내 번호로 등록할까요?\n대상 회차 ${targetDrawNo ?? '다음 회차'} · 성과 추적 대상이 됩니다.`)) m.mutate();
         }}
         aria-label={`내 번호로 등록 ${numbers.join(' ')}`}
       >
@@ -107,12 +110,41 @@ export function RegisterMyNumber({
   );
 }
 
+/** S4.10 자동 등록 결과 요약. */
+function AutoRegisterSummary({ r }: { r: AutoRegisterResult }) {
+  return (
+    <div className="mb-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs dark:border-emerald-800 dark:bg-emerald-950/40" role="status" aria-label="자동 등록 결과">
+      <div className="mb-1 font-medium text-emerald-800 dark:text-emerald-200">
+        내 번호로 자동 등록 — 대상 {r.target_draw_no}회 · {r.rounds.toLocaleString()}회 반복(1..{r.pool} 중 {r.pick}개) · seed {r.seed} · 선택 위치{' '}
+        <span className="font-semibold tabular-nums">{r.selected.join(', ')}</span> · 등록 {r.total_registered}장 / 중복 건너뜀 {r.total_skipped}장 ·{' '}
+        <Link to="/my-numbers" className="underline">
+          내 번호 보기
+        </Link>
+      </div>
+      <ul className="grid gap-x-4 sm:grid-cols-2 lg:grid-cols-3">
+        {r.strategies.map((s) => (
+          <li key={s.strategy} className="text-neutral-700 dark:text-neutral-300">
+            <span className="font-medium">{s.label}</span> ({s.batch_id.slice(0, 8)} · {s.n_tickets}장): 등록 {s.registered.length}
+            {s.skipped_existing.length > 0 && ` · 중복 ${s.skipped_existing.length}`}
+            {s.missing_positions.length > 0 && ` · 없는 위치 ${s.missing_positions.join(',')}`}
+            {s.registered.length > 0 && (
+              <span className="ml-1 text-neutral-500">{s.registered.map((t) => `#${t.position}[${t.ticket.join(' ')}]`).join(' ')}</span>
+            )}
+          </li>
+        ))}
+        {r.strategies.length === 0 && <li className="text-neutral-500">대상 회차의 사용자 생성 추천 이력이 없습니다. 먼저 추천을 생성(저장)하세요.</li>}
+      </ul>
+      <p className="mt-1 text-neutral-500">{r.policy}</p>
+    </div>
+  );
+}
+
 function TicketCard({ t, alpha, strategy, targetDrawNo }: { t: RecommendTicket; alpha: number; strategy: string; targetDrawNo: number }) {
   const [open, setOpen] = useState(false);
   return (
     <div className={`rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900 ${open ? 'md:col-span-2 xl:col-span-3' : ''}`}>
       <div className="mb-2 flex items-center justify-between">
-        <BallRow numbers={t.ticket} />
+        <BallRow numbers={t.ticket} pastWins={t.past_wins} />
         <span className="flex items-center gap-2">
           <RegisterMyNumber numbers={t.ticket} strategy={strategy} recId={t.rec_id} targetDrawNo={targetDrawNo} />
           {t.rec_id != null && <span className="text-[11px] text-neutral-400">#{t.rec_id}</span>}
@@ -159,6 +191,14 @@ export default function Recommend() {
     queryKey: ['recommend', 'history-summary', hFilter],
     queryFn: () => api.recommend.historySummary(hFilter),
   });
+  // S4.10 내 번호로 자동 등록 — 1..P 중 5개 무작위 추출을 대상 회차 수만큼 반복 → 빈도 상위 5 위치 → 전략별 최신 batch 티켓 등록
+  const autoReg = useMutation({
+    mutationFn: () => api.recommend.autoRegister({ target_draw_no: hTarget ? Number(hTarget) : undefined }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['user'] });
+      void qc.invalidateQueries({ queryKey: ['tracking'] });
+    },
+  });
   const [strategy, setStrategy] = useState('hybrid');
   const [count, setCount] = useState('');
   const [seed, setSeed] = useState('');
@@ -202,7 +242,7 @@ export default function Recommend() {
         </span>
       ),
     },
-    { key: 'ticket', label: '티켓', sortable: false, render: (r) => <BallRow numbers={r.ticket} size="sm" /> },
+    { key: 'ticket', label: '티켓', sortable: false, render: (r) => <BallRow numbers={r.ticket} size="sm" pastWins={r.past_wins} /> },
     { key: 'target_draw_no', label: '대상 회차', align: 'right' },
     { key: 'seed', label: 'seed', align: 'right' },
     { key: 'batch_id', label: 'batch', render: (r) => <span className="font-mono text-xs">{r.batch_id.slice(0, 8)}</span> },
@@ -210,7 +250,7 @@ export default function Recommend() {
       key: 'register',
       label: '내 번호',
       sortable: false,
-      render: (r) => <RegisterMyNumber numbers={r.ticket} strategy={r.strategy} recId={r.rec_id} targetDrawNo={r.target_draw_no} size="xs" />,
+      render: (r) => <RegisterMyNumber numbers={r.ticket} strategy={r.strategy} recId={r.rec_id} targetDrawNo={r.target_draw_no} size="xs" confirm={false} />,
     },
   ];
 
@@ -397,7 +437,7 @@ export default function Recommend() {
           )
         }
       >
-        <div className="mb-3 grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-6" role="group" aria-label="추천 이력 필터">
+        <div className="mb-3 grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-7" role="group" aria-label="추천 이력 필터">
           <Field label="출처" hint="검증 replay 티켓은 시뮬레이션">
             <select className={inputCls} value={hOrigin} onChange={(e) => setHOrigin(e.target.value as 'user' | 'backtest' | 'all')} aria-label="출처 필터">
               <option value="user">사용자 생성{historySummary.data?.by_origin?.user != null ? ` (${historySummary.data.by_origin.user})` : ''}</option>
@@ -459,7 +499,24 @@ export default function Recommend() {
               필터 초기화
             </button>
           </FormSlot>
+          <FormSlot>
+            <button
+              type="button"
+              className={`${btnCls} bg-emerald-700 hover:bg-emerald-800`}
+              title="1..P 중 5개 무작위 추출 × 대상 회차 수 → 빈도 상위 5 위치의 전략별 최신 티켓 등록"
+              disabled={autoReg.isPending}
+              onClick={() => {
+                const d = hTarget ? `${hTarget}회` : '최신 회차 + 1';
+                if (window.confirm(`대상 회차 ${d} 의 전략별 최신 추천 티켓 중 무작위 빈도 상위 5개 위치를 내 번호로 등록할까요?\n이미 등록된 번호는 건너뜁니다.`))
+                  autoReg.mutate();
+              }}
+            >
+              {autoReg.isPending ? '등록 중…' : '내 번호로 자동 등록'}
+            </button>
+          </FormSlot>
         </div>
+        {autoReg.isError && <ErrorBox error={autoReg.error} />}
+        {autoReg.data && <AutoRegisterSummary r={autoReg.data} />}
         {history.isLoading && <Loading />}
         {history.isError && <ErrorBox error={history.error} />}
         {history.data && (

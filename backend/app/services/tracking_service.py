@@ -12,6 +12,7 @@ from app.core.null_model import GAME
 from app.core.recommend.scorecard import hypergeom_match_var
 from app.core.timeutil import to_iso
 from app.db.models import Draw, Recommendation, TicketOutcome, UserTicket
+from app.services.past_wins import PastWinIndex
 
 TICKET_PRICE = 1000
 
@@ -267,6 +268,7 @@ def outcomes(
     rows = session.scalars(
         stmt.order_by(TicketOutcome.draw_no.desc(), TicketOutcome.outcome_id.desc()).offset(offset).limit(limit)
     ).all()
+    past = PastWinIndex(session)
     return [
         {
             "outcome_id": r.outcome_id,
@@ -276,6 +278,7 @@ def outcomes(
             "origin": r.origin,
             "draw_no": r.draw_no,
             "ticket": r.ticket,
+            "past_wins": past.lookup(r.ticket),
             "main_matches": r.main_matches,
             "bonus_match": r.bonus_match,
             "rank": r.rank,
