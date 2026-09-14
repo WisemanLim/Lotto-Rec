@@ -145,6 +145,7 @@ test-results/
 data/*.db
 data/*.db-journal
 data/cache/*
+data/backup/
 .make/
 test/**/logs/*
 !test/**/logs/.gitkeep

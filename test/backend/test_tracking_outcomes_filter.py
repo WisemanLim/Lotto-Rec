@@ -4,8 +4,18 @@ from __future__ import annotations
 
 
 def test_outcomes_filters_offset_and_summary(seeded: None, client) -> None:  # noqa: ANN001
-    client.post("/api/v1/validation/runs", json={"strategies": ["uniform", "frequency_hot"], "tickets_per_draw": 3,
-                                                 "from_draw": 1001, "to_draw": 1005, "seed": 4, "insert_draws": False, "sync": True})
+    client.post(
+        "/api/v1/validation/runs",
+        json={
+            "strategies": ["uniform", "frequency_hot"],
+            "tickets_per_draw": 3,
+            "from_draw": 1001,
+            "to_draw": 1005,
+            "seed": 4,
+            "insert_draws": False,
+            "sync": True,
+        },
+    )
     s_all = client.get("/api/v1/tracking/outcomes/summary?origin=backtest").json()
     assert s_all["total_all"] == 30 and s_all["total_filtered"] == 30
     assert s_all["draw_nos"] == [1005, 1004, 1003, 1002, 1001]

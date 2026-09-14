@@ -63,7 +63,12 @@ def _operations() -> set[tuple[str, str]]:
     from app.main import app
 
     spec = app.openapi()
-    return {(m.upper(), p) for p, ops in spec["paths"].items() for m in ops if m.lower() in ("get", "post", "put", "delete", "patch")}
+    return {
+        (m.upper(), p)
+        for p, ops in spec["paths"].items()
+        for m in ops
+        if m.lower() in ("get", "post", "put", "delete", "patch")
+    }
 
 
 def test_openapi_schema_generates_and_documents_all_endpoints() -> None:
@@ -101,18 +106,52 @@ def test_core_response_shapes(seeded: None, client) -> None:  # noqa: ANN001
         ("lotto_significance_level", float),
         ("lotto_default_correction", str),
         ("mc_iterations", dict),
+        ("lotto_cross_draw_lag", int),
+        ("lotto_min_effect_delta", float),
+        ("lotto_run_retention", int),
         ("timezone", str),
     ):
         assert isinstance(cfg[k], t), (k, cfg[k])
     summ = client.get("/api/v1/data/summary").json()
-    assert {"total_draws", "min_draw", "max_draw", "train_end_draw", "cohort_a_count", "cohort_b_count", "integrity"} <= set(summ)
+    assert {
+        "total_draws",
+        "min_draw",
+        "max_draw",
+        "train_end_draw",
+        "cohort_a_count",
+        "cohort_b_count",
+        "integrity",
+    } <= set(summ)
     imps = client.get("/api/v1/data/imports").json()
-    assert imps and {"import_id", "filename", "inserted", "skipped_duplicate", "conflicts", "invalid", "created_at"} <= set(imps[0])
+    assert imps and {
+        "import_id",
+        "filename",
+        "inserted",
+        "skipped_duplicate",
+        "conflicts",
+        "invalid",
+        "created_at",
+    } <= set(imps[0])
     _check_iso(imps[0]["created_at"])
     strategies = client.get("/api/v1/recommend/strategies").json()
     assert len(strategies) >= 9 and all({"id", "label", "basis", "expectation"} <= set(s) for s in strategies)
     run = client.post("/api/v1/analysis/runs", json={"cohort": "A", "mc_iterations": 100, "sync": True}).json()
-    for k in ("run_id", "cohort", "draw_from", "draw_to", "n_draws", "preset", "alpha", "correction", "mc_iterations", "seed", "data_hash", "status", "progress", "created_at"):
+    for k in (
+        "run_id",
+        "cohort",
+        "draw_from",
+        "draw_to",
+        "n_draws",
+        "preset",
+        "alpha",
+        "correction",
+        "mc_iterations",
+        "seed",
+        "data_hash",
+        "status",
+        "progress",
+        "created_at",
+    ):
         assert k in run, k
     _check_iso(run["created_at"])
     assert run["status"] == "done" and run["finished_at"]

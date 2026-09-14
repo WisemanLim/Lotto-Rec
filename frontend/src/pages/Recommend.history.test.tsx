@@ -57,7 +57,7 @@ test('추천 이력 행의 "내 번호로 등록" 버튼이 확인 팝업 없이
       const url = String(u);
       if (init?.method === 'POST' && url.includes('/user/tickets')) {
         posts.push({ url, body: JSON.parse(String(init.body)) });
-        return new Response(JSON.stringify({ ticket_id: 77, numbers: [1, 2, 3, 4, 5, 6], bonus: null, label: 'x', target_draw_no: 1241, scorecard: {}, created_at: null, outcomes: [] }), {
+        return new Response(JSON.stringify({ ticket_id: 77, numbers: [1, 2, 3, 4, 5, 6], bonus: null, label: 'x', target_draw_no: 1241, scorecard: {}, created_at: null, outcomes: [], duplicate: true, dup_count: 2, dup_labels: ['a', 'b'], same_number_ticket_ids: [] }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
@@ -81,7 +81,8 @@ test('추천 이력 행의 "내 번호로 등록" 버튼이 확인 팝업 없이
   expect(confirmSpy).not.toHaveBeenCalled();
   expect(posts[0].body).toMatchObject({ numbers: [1, 2, 3, 4, 5, 6], target_draw_no: 1241 });
   expect(String((posts[0].body as { label: string }).label)).toMatch(/^추천 .*#1$/);
-  await waitFor(() => expect(screen.getByText(/내 번호 #77 등록됨/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText(/★ 중복/)).toBeInTheDocument());
+  expect(screen.getByText(/#77 에 병합\(×2\)/)).toBeInTheDocument();
 });
 
 test('"내 번호로 자동 등록" 버튼이 필터 초기화 우측에 있고 POST /recommend/auto-register 후 결과 요약을 표시한다 (S4.10)', async () => {
@@ -97,8 +98,8 @@ test('"내 번호로 자동 등록" 버튼이 필터 초기화 우측에 있고 
         return new Response(
           JSON.stringify({
             target_draw_no: 1241, rounds: 1241, pool: 10, pick: 5, seed: 42, counts: {}, selected: [2, 4, 5, 7, 9],
-            strategies: [{ strategy: 'uniform', label: '균등', batch_id: 'abcdefgh-1', n_tickets: 10, registered: [{ position: 2, rec_id: 12, ticket: [1, 2, 3, 4, 5, 6], ticket_id: 90 }], skipped_existing: [], missing_positions: [] }],
-            total_registered: 1, total_skipped: 0, policy: 'p',
+            strategies: [{ strategy: 'uniform', label: '균등', batch_id: 'abcdefgh-1', n_tickets: 10, registered: [{ position: 2, rec_id: 12, ticket: [1, 2, 3, 4, 5, 6], ticket_id: 90 }], merged_duplicates: [], missing_positions: [] }],
+            total_registered: 1, total_merged: 0, policy: 'p',
           }),
           { status: 200, headers: { 'content-type': 'application/json' } },
         );

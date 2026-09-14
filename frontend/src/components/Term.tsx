@@ -6,6 +6,7 @@ import { GLOSSARY_BY_ID } from '../lib/glossary';
  * 용어 툴팁 (PRD §E6 공통 UX v1.2).
  * <Term id="hypergeom">영분포</Term> — hover/focus 시 쉬운 설명 + 링크. 미등록 id 는 텍스트만 렌더.
  * icon 모드: 라벨 뒤에 (?) 아이콘만 추가.
+ * 툴팁은 표 헤더(whitespace-nowrap) 안에서도 줄바꿈되도록 whitespace-normal 을 강제한다 (v1.10.1).
  */
 export default function Term({ id, children, icon = false, className = '' }: { id: string; children?: ReactNode; icon?: boolean; className?: string }) {
   const term = GLOSSARY_BY_ID[id];
@@ -53,7 +54,7 @@ export default function Term({ id, children, icon = false, className = '' }: { i
         <span
           id={tipId}
           role="tooltip"
-          className={`absolute top-full z-50 mt-1 w-80 rounded-lg border border-neutral-200 bg-white p-3 text-left text-xs font-normal normal-case leading-relaxed text-neutral-800 shadow-xl dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 ${flip ? 'right-0' : 'left-0'}`}
+          className={`absolute top-full z-50 mt-1 w-80 max-w-[calc(100vw-2rem)] whitespace-normal break-words rounded-lg border border-neutral-200 bg-white p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-neutral-800 shadow-xl dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 ${flip ? 'right-0' : 'left-0'}`}
         >
           <span className="mb-1 block text-[13px] font-semibold">{term.label}</span>
           <span className="block">{term.short}</span>

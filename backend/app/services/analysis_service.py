@@ -12,7 +12,7 @@ import numpy as np
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.core import frequency, groups, itemsets, order_stats, pairs, temporal, winners_model
+from app.core import cross_draw, frequency, groups, itemsets, order_stats, pairs, temporal, winners_model
 from app.core.config import settings
 from app.core.mc_engine import NullDistributions, run_null_simulation
 from app.core.null_model import GAME
@@ -35,6 +35,7 @@ SECTIONS = [
     "itemsets",
     "groups",
     "temporal",
+    "cross_draw",
     "network",
     "winners_model",
     "null_summary",
@@ -193,6 +194,7 @@ def compute_all(ds: DrawSet, run: AnalysisRun, report) -> dict:  # noqa: ANN001
         GAME,
         chunk=64,
         progress=lambda f: report(0.02 + 0.55 * f, f"monte_carlo {int(f * 100)}%"),
+        cross_max_lag=settings.lotto_cross_draw_lag,
     )
     report(0.6, "frequency")
     freq = frequency.number_frequency(x, "main", GAME, alpha)
@@ -216,6 +218,8 @@ def compute_all(ds: DrawSet, run: AnalysisRun, report) -> dict:  # noqa: ANN001
     tmp = temporal.temporal_analysis(
         x, ds.main, ds.draw_no, GAME, alpha, 10, nd.overlap_mean, nd.max_abs_lag1, nd.cusum_max
     )
+    report(0.92, "cross_draw")
+    cd = cross_draw.cross_draw_analysis(x, ds.draw_no, settings.lotto_cross_draw_lag, GAME, alpha, nd.max_abs_z_cross)
     report(0.95, "winners_model")
     try:
         wm = winners_model.fit_winners_model(
@@ -252,8 +256,15 @@ def compute_all(ds: DrawSet, run: AnalysisRun, report) -> dict:  # noqa: ANN001
             "temporal_alerts": tmp["alerts"],
             "overlap_mean": tmp["overlap"]["mean"],
             "cusum_p_mc": tmp["changepoint"].get("cusum_p_mc"),
+            "cross_draw_lag": cd["max_lag"],
+            "cross_draw_max_cell": cd["window"]["summary"]["max_cell"],
+            "cross_draw_max_z": cd["window"]["summary"]["max_abs_z"],
+            "cross_draw_p_maxT": cd["window"]["summary"]["max_cell_p_maxT"],
+            "cross_draw_any_lag_p_maxT": None if cd["any_lag"] is None else cd["any_lag"]["p_maxT"],
+            "cross_draw_n_sig_bh": cd["window"]["summary"]["n_sig_bh"],
+            "cross_draw_alerts": cd["alerts"],
         },
-        "verdict": _verdict(glob, pr, tmp, alpha),
+        "verdict": _verdict(glob, pr, tmp, alpha, cd),
         "interpretation_policy": [
             "공정 추첨에서도 번호쌍 상관은 구조적으로 음수(-1/44)입니다.",
             "보정 전 p<0.05 는 탐색 후보입니다. 990쌍 탐색 시 약 50개의 우연 후보가 정상입니다.",
@@ -270,12 +281,13 @@ def compute_all(ds: DrawSet, run: AnalysisRun, report) -> dict:  # noqa: ANN001
         "itemsets": its,
         "groups": grp,
         "temporal": tmp,
+        "cross_draw": cd,
         "winners_model": wm,
         "null_summary": nd.summary(),
     }
 
 
-def _verdict(glob: dict, pr: dict, tmp: dict, alpha: float) -> dict:
+def _verdict(glob: dict, pr: dict, tmp: dict, alpha: float, cd: dict | None = None) -> dict:
     flags = []
     if glob["joe_J"]["p_asymptotic"] < alpha:
         flags.append("전역 균등성(J) 유의")
@@ -286,6 +298,8 @@ def _verdict(glob: dict, pr: dict, tmp: dict, alpha: float) -> dict:
     if pr["summary"]["genest"].get("p_mc", 1) < alpha:
         flags.append("쌍 전역(Genest) 유의")
     flags.extend(tmp["alerts"])
+    if cd:
+        flags.extend(cd["alerts"])
     return {"consistent_with_uniform_null": not flags, "flags": flags}
 
 
@@ -343,6 +357,7 @@ def diff_runs(session: Session, prev: AnalysisRun, cur: dict) -> dict:
         "order_stat_p": _d("order_stat_p"),
         "genest_p_mc": _d("genest_p_mc"),
         "max_pair_p_maxT": _d("max_pair_p_maxT"),
+        "cross_draw_p_maxT": _d("cross_draw_p_maxT"),
         "sig_numbers": {
             "added": sorted(cur_nums - prev_nums),
             "removed": sorted(prev_nums - cur_nums),

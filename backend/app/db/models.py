@@ -135,6 +135,10 @@ class UserTicket(Base):
     label: Mapped[str | None] = mapped_column(String(64))
     target_draw_no: Mapped[int] = mapped_column(Integer, index=True)
     scorecard: Mapped[dict] = mapped_column(JSON, default=dict)
+    dup_count: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1"
+    )  # 같은 번호·회차 중복 등록 횟수 (S5.5)
+    dup_labels: Mapped[list] = mapped_column(JSON, default=list)  # 병합된 등록의 라벨 누적
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

@@ -41,6 +41,17 @@ make test            # pytest + vitest
 make local-stop
 ```
 
+Docker 로 구동(현재 환경, S7.1 — honcho 대신 컨테이너, 같은 `./data` DB 공유):
+
+```bash
+make local-stop                  # honcho 가 8000/5173 을 쓰고 있으면 먼저 정리 (또는 아래처럼 다른 포트)
+make docker-all                  # 이미지 빌드 + api/web 기동. api 는 시작 시 alembic upgrade head 자동
+LOTTO_DOCKER_SEED=1 make docker-all   # 빈 DB 라면 원천 xlsx 전체 적재까지
+make docker-logs SVC=api         # [entrypoint] alembic upgrade head → uvicorn 확인
+make docker-ps / docker-stop     # 상태 / 정리(호스트 ./data 유지)
+LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all   # honcho 와 동시 실행 시
+```
+
 첫 사용 흐름: 설정 화면에서 **분석 실행(군 A, quick)** → 검증 화면에서 **검증 실행(1,001~1,240회 replay)** → 추천/내 번호/성과 추적.
 검증 실행은 군 B 실데이터를 DB 에 삽입하므로 이후 데이터는 1,240회가 된다(군 B 라벨 유지).
 
@@ -53,11 +64,15 @@ make local-stop
 | `make local-all` / `local-logs` / `local-stop` / `local-restart` / `local-ps` | backend+frontend 일괄 기동/로그/종료/재기동/상태 (honcho 백그라운드, `PROC_MGR=pm2` 대안, `LOCAL_INFRA=` 로 docker infra 선택) |
 | `make test` / `make lint` | pytest + vitest / ruff + mypy + eslint + tsc |
 | `make db-migrate` / `db-seed` / `db-reset` / `db-fresh` | Alembic 적용 / xlsx 군 A 증분 적재(`uv run python -m app.seed [--all\|--max-draw N]`) / SQLite 재생성 / reset+seed |
+| `make reanalyze [PRESET=quick\|report\|deep] [COHORTS=A,B,ALL]` | **DB 파일 백업(`data/backup/lotto_<UTC>.db`) 후 군 A·B·ALL 재분석** (`python -m app.reanalyze`, trigger=reanalyze). 기존 run 은 삭제하지 않고 `LOTTO_RUN_RETENTION` 으로 정리 |
+| `make docker-all` / `docker-build` / `docker-logs` / `docker-stop` / `docker-restart` / `docker-ps` | **[docker, 현재 환경]** backend(api)+frontend(web) 컨테이너 빌드·기동(백그라운드)/빌드/로그(`SVC=api\|web`)/정리/재기동/상태. `.env.local` 을 env_file·포트로 사용, `./data`(SQLite·cache·backup)·`./.docs` 볼륨 공유. **api 는 시작 시 `alembic upgrade head` 자동 실행** 후 uvicorn, `LOTTO_DOCKER_SEED=1 make docker-all` 이면 xlsx 전체 적재. web 은 Vite dev 서버가 `/api` 를 `api:8000` 으로 프록시. honcho 가 같은 포트를 쓰고 있으면 안내 후 중단(`make local-stop` 또는 `LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all`) |
+| `make docker-migrate` / `docker-seed` / `docker-reanalyze` | [docker] 컨테이너로 마이그레이션만 / 원천 xlsx 전체 적재(멱등) / DB 백업 후 재분석(`PRESET`, `COHORTS`) |
 | `make <env>-*` | dev/staging/prod 컨테이너 타겟 — 표준 호환용, 본 프로젝트 미사용 |
 
 ## 환경 변수 (`.env.local`)
 
 변수명 = 한국어 용어 직역 + `LOTTO_` 접두어. 전체 목록 `.env.local.example`, PRD §10.
+우선순위(낮→높): `.env.local.example`(기본값) → `.env` → `.env.local`(사용자 값) → OS 환경변수. 값 변경 후 `make local-restart`(uvicorn reload 는 .env 를 감시하지 않음).
 
 | 변수 | 기본 | 설명 |
 |---|---|---|
@@ -69,6 +84,7 @@ make local-stop
 | `LOTTO_RANDOM_SEED` | 20260908 | 재현성 seed |
 | `LOTTO_AUTO_RERUN_PRESET` | quick | 새 회차 삽입 후 자동 재분석(`off` 가능) |
 | `LOTTO_RUN_RETENTION` | 20 | 분석 run 보존 개수(0=무제한). 군별 최신·활성 실험 참조 run 은 보존 |
+| `LOTTO_CROSS_DRAW_LAG` | 5 | **회차간 교차 공출현 전/후 간격 L**(1–50). lag 1..L 개별 + 창 합산 분석, 경계 회차(앞·뒤 L 회)는 간격 내 가능한 쌍만 포함. 변경 후 `make local-restart` → 새 분석 run(또는 `make reanalyze`). 현재 값은 `GET /config`·설정 화면에서 확인, 회차간 연관성 화면이 run 의 L 과 다르면 안내 |
 | `LOTTO_PRIZE_RANK3_DEFAULT` / `_RANK4_` / `_RANK5_` | 1500000 / 50000 / 5000 | 3·4·5등 고정 당첨금(가정값, 성과추적) |
 | `DATABASE_URL` | `sqlite:///./data/lotto.db` | 루트 기준 상대경로 → 절대경로 자동 변환 |
 | `LOTTO_BACKEND_PORT` / `LOTTO_FRONTEND_PORT` | 8000 / 5173 | 127.0.0.1 바인딩 |
@@ -81,11 +97,11 @@ make local-stop
 |---|---|
 | 설정 | `GET /api/v1/config` |
 | 데이터 | `POST /data/import` (xlsx/csv 증분, `?overwrite`) · `POST /data/draws` (단일 회차) · `GET /data/draws[/{n}]` · `GET /data/summary` · `GET /data/imports` |
-| 분석 | `POST /analysis/runs` {cohort A\|B\|ALL, preset, alpha?, correction?, seed?, mc_iterations?, sync?} · `GET /analysis/runs[/latest\|/{id}]` · `GET /analysis/runs/{id}/{section}` (summary, frequency, frequency_bonus, global, pairs, network, itemsets, groups, temporal, winners_model, null_summary, **diff_vs_previous**) · `DELETE /analysis/runs/{id}` · `POST /analysis/itemsets/query` {items \| target+given} |
+| 분석 | `POST /analysis/runs` {cohort A\|B\|ALL, preset, alpha?, correction?, seed?, mc_iterations?, sync?} · `GET /analysis/runs[/latest\|/{id}]` · `GET /analysis/runs/{id}/{section}` (summary, frequency, frequency_bonus, global, pairs, network, itemsets, groups, temporal, **cross_draw**, winners_model, null_summary, diff_vs_previous) · `DELETE /analysis/runs/{id}` · `POST /analysis/itemsets/query` {items \| target+given} |
 | 검증 | `POST /validation/runs` {strategies?, tickets_per_draw?, from_draw?, to_draw?, seed?, insert_draws, sync?} · `GET /validation/runs[/latest\|/{id}]` · `GET /validation/runs/{id}/{kind}` (meta, backtest, scoring, replication, homogeneity) |
-| 추천 | `GET /recommend/strategies` · `POST /recommend` {strategy, count?, seed?, max_shared?, include_control, save} → sets[].params_used·experiment, analysis_basis, tickets[].`past_wins`(과거 1·2등 일치 회차, S4.9) · `GET /recommend/history?origin=user\|backtest\|all&limit(≤50000)&offset&strategy&batch_id&target_draw_no`(행마다 `past_wins`) · `GET /recommend/history/summary?origin=` · `POST /recommend/auto-register` {target_draw_no?, seed?} → 1..P 중 5개 무작위 추출 × 대상 회차 수 → 빈도 상위 5 위치의 전략별 최신 batch 티켓을 내 번호로 등록(중복 건너뜀, S4.10) |
+| 추천 | `GET /recommend/strategies` · `POST /recommend` {strategy, count?, seed?, max_shared?, include_control, save} → sets[].params_used·experiment, analysis_basis, tickets[].`past_wins`(과거 1·2등 일치 회차, S4.9) · `GET /recommend/history?origin=user\|backtest\|all&limit(≤50000)&offset&strategy&batch_id&target_draw_no`(행마다 `past_wins`) · `GET /recommend/history/summary?origin=` · `POST /recommend/sequential` {strategies?, count?, seed?, max_shared?, save} → **모든 전략 순차 생성**(카탈로그 순, 전략별 batch, control 미포함, 실패 전략은 `failed` 로 계속·보고; S4.11) · `POST /recommend/auto-register` {target_draw_no?, seed?} → 1..P 중 5개 무작위 추출 × 대상 회차 수 → 빈도 상위 5 위치의 전략별 최신 batch 티켓을 내 번호로 등록(같은 번호·회차는 ★ 중복 병합 → `merged_duplicates`/`total_merged`, S4.10·S5.6) |
 | 실험(전략 개선 루프) | `GET /experiments/strategy-params` · `POST /experiments/runs` {strategy, base_params?, search random\|coordinate, n_candidates, tune_from/to, holdout_from/to, tickets_per_draw, seed, sync} · `GET /experiments/runs[?strategy]` · `GET /experiments/runs/{id}` · `GET /experiments/lineage?strategy=` · `GET /experiments/active` · `POST /experiments/runs/{id}/activate` · `POST /experiments/deactivate?strategy=` · `DELETE /experiments/runs/{id}` |
-| 사용자 | `POST /user/tickets/evaluate` · `POST /user/tickets` · `GET /user/tickets` · `DELETE /user/tickets/{id}` |
+| 사용자 | `POST /user/tickets/evaluate` · `POST /user/tickets`(같은 번호·대상 회차가 이미 있으면 새 행 없이 병합: `dup_count`+1·`dup_labels` 누적, S5.6) · `GET /user/tickets?target_draw_no=`(회차 필터 S5.7; 행마다 `dup_count`·`dup_labels`·`same_number_ticket_ids`·`duplicate`) · `GET /user/tickets/draws`(**현재 대상 회차** 컨텍스트: next_draw·latest_result_draw·active_target_draw·reason·draws[{target_draw_no,count,evaluated}] — 다음 회차 추천 저장/등록 시 next, 아니면 최근 등록 회차) · `DELETE /user/tickets/{id}` |
 | 성과 추적 | `GET /tracking/summary?origin=user\|backtest` · `GET /tracking/outcomes?draw_no&strategy&source&origin&limit(≤50000)&offset`(행마다 `past_wins`) · `GET /tracking/outcomes/summary` · `GET /tracking/pending` · `POST /tracking/evaluate/{draw_no}` |
 
 예시 (군 A 분석, 실제 응답 요약):
@@ -109,14 +125,16 @@ curl -s localhost:8000/api/v1/analysis/runs/<run_id>/summary | jq .kpi
 | `core/itemsets.py` | 3-집합 후보(상위 쌍×제3번호)·조건부 P(1\|2,3)·집합쌍 (1,2)→(3,4) |
 | `core/groups.py` | 홀짝·저고·구간·생일수·소수 = 하이퍼지오메트릭, 합·연속·끝수·범위·AC = MC 영분포, 전형성(마할라노비스) |
 | `core/temporal.py` | 인접 중복수, lag 1~10 자기상관 + maxT, runs, gap KS, Ljung–Box, CUSUM(MC)·PELT |
+| `core/cross_draw.py` | **회차간 교차 공출현(S2.13)**: 전회차 번호 i → 후회차 번호 j 45×45 방향 행렬(대각 = 재출현), lag 1..L 개별 + 창 합산, 영가설 셀 확률 (k/N)², **주변빈도 조건부 2×2 독립성 z**(자주 나온 번호의 셀 부풀림 제거)·정규근사 p·BH/BY·MC maxT(lag별·창·전 lag), 경계 회차 부분 포함 커버리지 |
 | `core/winners_model.py` | 조합 특성 → 1등 당첨자수 음이항 회귀(+VIF), 저경쟁 조합 예측 |
-| `core/mc_engine.py` | 한 번의 시뮬레이션 패스로 모든 영분포 수집 (quick 10k ≈ 20s) |
+| `core/mc_engine.py` | 한 번의 시뮬레이션 패스로 모든 영분포 수집 (quick 10k ≈ 20s; 교차 공출현 maxT 포함 시 ≈ 50s) |
 | `core/recommend/` | 9 전략(가중 비복원 A-Res, 쌍 순차, 전형성 필터, 저경쟁, **군 A 분석 가중**), 파라미터 스키마·병합, 스코어카드 |
 | `services/experiment_service.py` | **전략 개선 루프**: K 후보 → 튠 B₁ replay → 최고 선택 → 홀드아웃 B₂ → best-of-K 영분포·optimism·계보 Spearman·활성화 (PRD §4.12, §E9) |
 
 ## 검증 결과 요약 (2026-09-08, PRD §17)
 
 - 군 A·B·전체 모두 균등 영가설과 일치 (J p = 0.888 / 0.393 / 0.877, maxT·Genest·CUSUM 모두 비유의).
+- **재분석(2026-09-14, 1,241회 포함, PRD §17.5)**: 군 A(1~1,000)·B(1,001~1,241)·전체(1~1,241) J p = 0.888 / 0.396 / 0.874, **회차간 교차 공출현(창 1..5)** 최대 셀 maxT p = 0.087 / 0.396 / 0.125, FWER 유의 셀 0, 재출현 z = 0.70 / −1.77 / 0.27 — 전/후 회차 번호 사이에 의존성 증거 없음.
 - Replay backtest 1,001~1,240회 × 8전략 × 10장: **모든 전략 "균등과 차이 없음"**, 1~3등 0건, 재현율 0/29(H0 기대 2.5%).
 - 전략 개선 루프(`analysis_weighted`, K=8, 튠 1,001~1,120 → 홀드아웃 1,121~1,240): 튠 최고 diff +0.007(H0 best-of-8 기대 +0.046) → 홀드아웃 −0.021, 2세대 +0.025 → −0.058. **개선은 홀드아웃에서 소멸(평균 회귀)** — PRD §17.4.
 
@@ -142,10 +160,20 @@ curl -s localhost:8000/api/v1/analysis/runs/<run_id>/summary | jq .kpi
 | impl/15th | S4.10 추천 이력 '내 번호로 자동 등록'(무작위 빈도 상위 5 위치 → 전략별 최신 batch 티켓 등록, `POST /recommend/auto-register`) | PASS 5/5 (pytest 62, vitest 31) |
 | impl/16th | S4.7/S4.10 UX — 자동 등록 규칙은 버튼 툴팁만, 추천 이력 행 '내 번호로 등록'은 확인 팝업 없이 즉시 | PASS 4/4 (pytest 62, vitest 31) |
 | impl/17th | S5.5 내 번호 '등록된 번호로 추첨 시도' — 1..N(저장 개수) 무작위 빈도 규칙(`lib/lottery.ts`)으로 5장 ★ 표시, DB 저장 없음 | PASS 6/6 (pytest 62, vitest 34) |
+| impl/18th | S5.6 내 번호 **★ 중복 ×n 표시** — 같은 번호·회차 등록은 병합(`user_ticket.dup_count/dup_labels`, Alembic 5b12a3e1), 다른 회차 동일 번호는 `same_number_ticket_ids` 로 묶음, 자동 등록 skip→merge, 용어 `duplicate_ticket`(중복 생성 ≠ 유의성 증거) | PASS 8/8 (pytest 63, vitest 35) |
+| impl/19th | 버그 수정 — 내 번호 보너스 포함 평가 시 백색 화면(스코어카드 `bonus` dict → int, `bonus_info` 분리, ScorecardView 방어 렌더) | PASS 4/4 (pytest 63, vitest 37) |
+| impl/20th | 버그 수정 — `.env.local` 값 미적용(pydantic-settings `env_file` 뒤 파일 우선 → example 이 덮어씀; 순서 example → `.env` → `.env.local` 로 수정, 우선순위 회귀 테스트) | PASS 6/6 (pytest 65, vitest 37) |
+| impl/27th | S7.1 **docker compose 구동** — Dockerfile 정비(lock 고정·`.dockerignore`·`/srv/lotto` 루트), api 엔트리포인트 `alembic upgrade head`(선택 시드) → uvicorn, web Vite 프록시 → `api:8000`, `make docker-*` 9종. 실측: 빌드·기동(18000/15173) → 마이그레이션 로그·health·API(1,241회)·프론트 프록시 OK, 빈 DB 마이그레이션 3단계 적용, honcho 충돌 안내 | PASS 8/8 (pytest 76, vitest 45) |
+| impl/26th | UI 수정 — '추천 생성'·'추천 생성(순차)' 두 줄 표시 → 버튼 슬롯 2열·줄바꿈 금지로 한 줄 배치 | PASS 3/3 (vitest 45) |
+| impl/25th | S4.11 **추천 생성(순차)** — '추천 생성' 우측 버튼, 전략 선택의 모든 전략을 순서대로 같은 옵션으로 생성(전략별 batch, `POST /recommend/sequential`), 전략별 결과 섹션 + 요약 | PASS 5/5 (pytest 76, vitest 45) |
+| impl/24th | 사용자 보고 "회차간 상관분석 .env 변수 미적용" — 엔진 적용은 정상, `/config`·설정 화면 미노출이 원인. `lotto_cross_draw_lag`·`lotto_min_effect_delta`·`lotto_run_retention` 노출, 회차간 연관성 화면 설정/run L 불일치 안내 | PASS 5/5 (pytest 74, vitest 44) |
+| impl/23rd | S5.7 **저장된 번호 회차 전환·필터** — 추첨 결과 등록 직후엔 기존 번호·낙첨 결과 유지, **다음 회차 추천을 저장하면** 목록이 다음 회차로 전환(이전 회차는 숨김·삭제 아님), 회차 필터(자동/특정/전체), `GET /user/tickets/draws` | PASS 6/6 (pytest 74, vitest 42) |
+| impl/22nd | 버그 수정 — 용어 툴팁이 박스를 벗어남(표 헤더 `whitespace-nowrap` 상속 → 툴팁 `whitespace-normal break-words` + 뷰포트 폭 상한) | PASS 3/3 (vitest 40) |
+| impl/21st | S2.13 **회차간 교차 공출현**(전회차 i→후회차 j 45×45, lag 1..L 개별+창, 조건부 독립성 z·MC maxT, 경계 회차 부분 포함) · `LOTTO_CROSS_DRAW_LAG` · 화면 `/cross-draw` · `make reanalyze`(백업 후 군 A/B/ALL 재분석, 1,241회 포함) | PASS 11/11 (pytest 72, vitest 39) |
 
 ```bash
 make test                      # 전체
-uv --directory backend run pytest -q   # backend 만 (41 tests)
+uv --directory backend run pytest -q   # backend 만 (76 tests)
 cd frontend && pnpm test -- --run   # frontend 만
 ```
 
@@ -155,11 +183,11 @@ cd frontend && pnpm test -- --run   # frontend 만
 Lotto-Rec/
 ├── .docs/                # PRD.md(단일 원본), Perplexity 조사문서, lotto(~1240).xlsx
 ├── backend/
-│   ├── app/{main.py, api/, core/, core/recommend/, services/, db/, schemas/, seed.py}
-│   ├── alembic/versions/ alembic.ini pyproject.toml Dockerfile
+│   ├── app/{main.py, api/, core/, core/recommend/, services/, db/, schemas/, seed.py, reanalyze.py}
+│   ├── alembic/versions/ alembic.ini pyproject.toml uv.lock Dockerfile docker-entrypoint.sh .dockerignore
 ├── frontend/src/{pages,components,api,hooks,lib}/
 ├── test/{dev-env, impl/<Nth>, backend}/
-├── data/                 # lotto.db, cache/ (git 제외)
+├── data/                 # lotto.db, cache/, backup/ (git 제외; backup 은 make reanalyze 가 생성)
 ├── Makefile Procfile.dev ecosystem.config.cjs docker-compose.yml
 └── .env.local(.example)  CUSTOM_STACK.md  COMPLIANCE.md
 ```
@@ -174,8 +202,17 @@ Lotto-Rec/
 | 추천이 `fallback: winners_model 없음` | 완료된 군 A 분석 run 이 없음 → 먼저 분석 실행 |
 | Tailwind 설정(darkMode 등) 변경 후 화면 반영 안 됨 | Vite dev 서버가 tailwind.config 를 시작 시 로드 → `make local-restart` |
 | 추천 이력이 "전체"인데 건수가 적음 | 이력 기본 출처 = 사용자 생성(저장 체크한 추천만). 검증 replay 가 만든 시뮬레이션 티켓은 출처 필터를 "검증 replay" 또는 "전체"로 |
-| Docker 없음 경고 | local 전용(SQLite)이라 무시 가능 |
+| `LOTTO_CROSS_DRAW_LAG` 를 바꿨는데 회차간 연관성 화면이 그대로 / 설정 화면에 안 보임 | 간격은 run 생성 시점에 고정됨(섹션 `max_lag`). 순서: `.env.local` 수정 → `make local-restart` → 설정 화면 `lotto_cross_draw_lag` 값 확인 → 새 분석 run 또는 `make reanalyze`. 회차간 연관성 화면은 run 의 L 과 현재 설정 L 이 다르면 파란 안내를 띄움(v1.11.1) |
+| 회차간 연관성에서 어떤 번호의 대각(재출현) 셀만 크게 보임 | 해당 번호의 전체 출현 빈도가 높은 효과. 표시·판정에 쓰는 z 는 주변빈도 **조건부** 독립성 z 라 부풀려지지 않음(무조건 기대는 참고 열 `기대(H0)`) |
+| 추첨 결과 등록 후 '내 번호' 저장 목록이 비어 보임 | S5.7 설계: 다음 회차 추천을 저장(또는 다음 회차 번호 등록)한 순간 목록이 다음 회차로 전환됨. 이전 회차 번호는 삭제되지 않음 — '대상 회차' 필터에서 해당 회차 또는 '전체 회차' 선택 |
+| 표 헤더의 (?) 툴팁 글이 박스 밖으로 한 줄로 흘러나감 | `DataTable` th/td 의 `whitespace-nowrap` 이 툴팁에 상속됨. v1.10.1 에서 `Term` 툴팁에 `whitespace-normal break-words`·`max-w-[calc(100vw-2rem)]` 강제 — 줄바꿈되며 세로 크기는 자동 |
+| Docker 없음 경고 | local 전용(SQLite)이라 무시 가능(`make local-all` 은 Docker 불필요). `make docker-*` 만 Docker 필요 |
+| `make docker-all` 이 "honcho 가 실행 중" 으로 중단 | 같은 포트(8000/5173) 충돌 방지. `make local-stop` 후 실행하거나 `LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all` |
+| 컨테이너 api 가 `.env.local` 값을 못 읽음 / 경로 오류 | compose 가 `.env.local` 을 env_file 로 주입(따옴표 값 정상 처리). 컨테이너 루트는 `/srv/lotto`(DB `./data/lotto.db` → `/srv/lotto/data/lotto.db`). 값 변경 후 `make docker-restart SVC=api` |
+| web 컨테이너에서 API 호출 실패 | web 은 Vite dev 서버가 `/api` 를 `VITE_API_BASE=http://api:8000` 으로 프록시. api healthcheck 통과 후 기동(`depends_on: service_healthy`) — `make docker-logs SVC=api` 로 alembic/uvicorn 확인 |
 | `This project is configured to use 9.9.0 of pnpm` | `packageManager` 핀 ≠ 전역 pnpm. 반드시 `frontend/` 안에서 `pnpm …` 실행(Makefile·Procfile 은 `cd frontend &&` 사용). 또는 핀을 설치 버전으로 변경 |
+| **보너스 포함 평가 후 백색 화면** | 스코어카드 응답 `bonus` 가 객체로 내려와 `BallRow` 가 객체를 렌더 → React 크래시. v1.9.1 에서 `bonus` int\|null + `bonus_info` 분리, 프론트 방어 렌더 |
+| **`.env.local` 값(예: `LOTTO_NUMBER_RECOMMENDATION_COUNT=20`)이 적용 안 됨** | pydantic-settings 는 `env_file` 튜플의 **뒤 파일이 우선**인데 `.env.local.example` 이 뒤에 있어 기본값이 항상 승리했음. v1.9.2 에서 순서를 example → `.env` → `.env.local` 로 수정. 파일 변경은 uvicorn reload 대상이 아니므로 `make local-restart` 필요 |
 
 ## 다음 단계 / 잔여
 

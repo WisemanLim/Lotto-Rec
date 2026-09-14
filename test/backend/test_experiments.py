@@ -65,14 +65,18 @@ def test_best_of_k_null_scales() -> None:
 
 
 def test_replay_and_metrics_pure(seeded: None) -> None:
+    from pathlib import Path
+
     from app.core.data_io import load_source_file
     from app.core.features import incidence_from_draws
-    from pathlib import Path
 
     rep = load_source_file(Path(__file__).resolve().parents[2] / ".docs" / "lotto(~1240).xlsx")
     recs = [r for r in rep.records if 1001 <= r.draw_no <= 1006]
     hist = incidence_from_draws(np.array([r.numbers for r in rep.records if r.draw_no <= 1000]), 45)
-    specs = [{"label": "hot", "strategy": "frequency_hot", "params": {"gamma": 2.0}}, {"label": "uniform", "strategy": "uniform", "params": {}}]
+    specs = [
+        {"label": "hot", "strategy": "frequency_hot", "params": {"gamma": 2.0}},
+        {"label": "uniform", "strategy": "uniform", "params": {}},
+    ]
     out = xsvc.replay(specs, recs, hist, 3, 5, None, None)
     assert len(out["hot"]["outcomes"]) == 18 and len(out["hot"]["scoring"]) == 6
     m = xsvc.metrics(out["hot"]["outcomes"], out["uniform"]["outcomes"], out["hot"]["scoring"])
@@ -85,8 +89,18 @@ def test_experiment_api_sync_and_activate(seeded: None, client) -> None:  # noqa
     ids = {s["id"] for s in sp["strategies"]}
     assert "analysis_weighted" in ids and any(s["params"] for s in sp["strategies"])
 
-    body = {"strategy": "analysis_weighted", "search": "random", "n_candidates": 3, "tune_from": 1001, "tune_to": 1008,
-            "holdout_from": 1009, "holdout_to": 1016, "tickets_per_draw": 3, "seed": 5, "sync": True}
+    body = {
+        "strategy": "analysis_weighted",
+        "search": "random",
+        "n_candidates": 3,
+        "tune_from": 1001,
+        "tune_to": 1008,
+        "holdout_from": 1009,
+        "holdout_to": 1016,
+        "tickets_per_draw": 3,
+        "seed": 5,
+        "sync": True,
+    }
     r = client.post("/api/v1/experiments/runs", json=body)
     assert r.status_code == 200, r.text
     e = r.json()
@@ -109,7 +123,9 @@ def test_experiment_api_sync_and_activate(seeded: None, client) -> None:  # noqa
     assert act["is_active"] is True
     active = client.get("/api/v1/experiments/active?strategy=analysis_weighted").json()
     assert active["analysis_weighted"]["experiment_id"] == r2["experiment_id"]
-    rec = client.post("/api/v1/recommend", json={"strategy": "analysis_weighted", "count": 3, "seed": 1, "save": False}).json()
+    rec = client.post(
+        "/api/v1/recommend", json={"strategy": "analysis_weighted", "count": 3, "seed": 1, "save": False}
+    ).json()
     st = rec["sets"][0]
     assert st["params_used"] == r2["params"] and st["experiment"]["iteration"] == 2
     assert rec["analysis_basis"]["history_T"] >= 1000 and len(rec["analysis_basis"]["top_abs_z_numbers"]) == 8
@@ -123,7 +139,9 @@ def test_experiment_api_sync_and_activate(seeded: None, client) -> None:  # noqa
 
     # 비활성화 → 기본 파라미터
     client.post("/api/v1/experiments/deactivate?strategy=analysis_weighted")
-    rec2 = client.post("/api/v1/recommend", json={"strategy": "analysis_weighted", "count": 2, "seed": 1, "save": False}).json()
+    rec2 = client.post(
+        "/api/v1/recommend", json={"strategy": "analysis_weighted", "count": 2, "seed": 1, "save": False}
+    ).json()
     assert rec2["sets"][0]["params_used"] == strat.default_params("analysis_weighted")
     lst = client.get("/api/v1/experiments/runs?strategy=analysis_weighted").json()
     assert len(lst) == 2
@@ -131,8 +149,17 @@ def test_experiment_api_sync_and_activate(seeded: None, client) -> None:  # noqa
 
 def test_h0_experiment_holdout_regresses(seeded: None, client) -> None:  # noqa: ANN001
     """튠에서 최고를 골라도 홀드아웃 diff CI 는 0 을 포함(균등 데이터 아님에도 실데이터 = 공정 추첨 가정)."""
-    body = {"strategy": "frequency_hot", "n_candidates": 4, "tune_from": 1001, "tune_to": 1010, "holdout_from": 1011,
-            "holdout_to": 1020, "tickets_per_draw": 4, "seed": 9, "sync": True}
+    body = {
+        "strategy": "frequency_hot",
+        "n_candidates": 4,
+        "tune_from": 1001,
+        "tune_to": 1010,
+        "holdout_from": 1011,
+        "holdout_to": 1020,
+        "tickets_per_draw": 4,
+        "seed": 9,
+        "sync": True,
+    }
     e = client.post("/api/v1/experiments/runs", json=body).json()
     ci = e["metrics_holdout"]["diff_vs_uniform"]["ci95"]
     assert ci[0] <= 0.3 and ci[1] >= -0.3  # 폭 넓은 안전 범위 — 방향성 없음

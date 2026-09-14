@@ -77,6 +77,9 @@ export interface AppConfig {
   mc_iterations: { quick: number; report: number; deep: number };
   lotto_random_seed: number;
   lotto_auto_rerun_preset: string;
+  lotto_cross_draw_lag?: number;
+  lotto_min_effect_delta?: number;
+  lotto_run_retention?: number;
   timezone?: string;
 }
 
@@ -185,6 +188,7 @@ export type Section =
   | 'itemsets'
   | 'groups'
   | 'temporal'
+  | 'cross_draw'
   | 'winners_model'
   | 'null_summary'
   | 'diff_vs_previous';
@@ -217,6 +221,13 @@ export interface SummarySection {
     temporal_alerts: string[];
     overlap_mean: number;
     cusum_p_mc: number;
+    cross_draw_lag?: number;
+    cross_draw_max_cell?: [number, number];
+    cross_draw_max_z?: number;
+    cross_draw_p_maxT?: number | null;
+    cross_draw_any_lag_p_maxT?: number | null;
+    cross_draw_n_sig_bh?: number;
+    cross_draw_alerts?: string[];
     [k: string]: unknown;
   };
   verdict: { consistent_with_uniform_null: boolean; flags: string[] };
@@ -415,6 +426,72 @@ export interface GroupsSection {
   schemes: Record<string, GroupScheme>;
 }
 
+/** S2.13 회차간 교차 공출현 — 전회차 번호(prev) → 후회차 번호(next). */
+export interface CrossDrawRow {
+  prev: number;
+  next: number;
+  observed: number;
+  expected: number;
+  expected_cond: number;
+  lift: number | null;
+  cond_lift: number | null;
+  z: number;
+  p: number;
+  p_holm: number;
+  q_bh: number;
+  q_by: number;
+  sig_bh: boolean;
+  p_maxT?: number;
+  sig_fwer?: boolean;
+}
+export interface CrossDrawBlock {
+  summary: {
+    n_pairs: number;
+    n_cells: number;
+    expected: number;
+    max_abs_z: number;
+    max_cell: [number, number];
+    max_cell_p_maxT: number | null;
+    n_sig_bh: number;
+    n_sig_by: number;
+    n_sig_fwer: number | null;
+    n_raw_p05: number;
+    expected_false_positives_raw: number;
+    repeat: { observed: number; expected: number; expected_cond: number; z: number };
+  };
+  rows: CrossDrawRow[];
+  matrix: number[][];
+  z_matrix: number[][];
+}
+export interface CrossDrawLagBlock extends CrossDrawBlock {
+  lag: number;
+  draw_pairs: { first: [number, number]; last: [number, number] };
+}
+export interface CrossDrawSection {
+  T: number;
+  N: number;
+  max_lag: number;
+  p_cell: number;
+  cell_semantics: string;
+  statistic: string;
+  window: CrossDrawBlock & { lags: number[] };
+  lags: CrossDrawLagBlock[];
+  any_lag: { max_abs_z: number; lag: number; cell: [number, number]; p_maxT: number; n_tests: number } | null;
+  coverage: {
+    draw_from: number;
+    draw_to: number;
+    max_lag: number;
+    effective_max_lag: number;
+    n_draws_partial_head: number;
+    n_draws_partial_tail: number;
+    partial_head: Array<{ draw_no: number; as_next: number }>;
+    partial_tail: Array<{ draw_no: number; as_prev: number }>;
+    note: string;
+  };
+  alerts: string[];
+  note: string;
+}
+
 export interface TemporalSection {
   T: number;
   overlap: {
@@ -601,6 +678,8 @@ export interface StrategyInfo {
 export interface Scorecard {
   numbers: number[];
   bonus: number | null;
+  /** 보너스 지정 시: 본번호 중복 여부·보너스 번호가 본번호로 출현한 횟수 */
+  bonus_info?: { in_main: boolean; observed_as_main: number | null } | null;
   history_T: number;
   per_number: { number: number; observed: number; expected: number; z: number; p: number; current_gap: number }[];
   pairs: { a: number; b: number; observed: number; expected: number; calibrated_lift: number; z: number }[];
@@ -696,6 +775,23 @@ export interface RecommendResponse {
   policy: string;
 }
 
+/** S4.11 추천 생성(순차). */
+export interface SequentialIn {
+  strategies?: string[] | null;
+  count?: number | null;
+  seed?: number | null;
+  max_shared?: number | null;
+  save: boolean;
+}
+export interface SequentialResponse {
+  sequence_id: string;
+  target_draw_no: number | null;
+  strategies: string[];
+  results: RecommendResponse[];
+  failed: Array<{ strategy: string; error: string }>;
+  total_tickets: number;
+}
+
 export interface RecommendHistoryItem {
   rec_id: number;
   batch_id: string;
@@ -727,7 +823,7 @@ export interface AutoRegisterStrategy {
   batch_id: string;
   n_tickets: number;
   registered: AutoRegisterTicket[];
-  skipped_existing: AutoRegisterTicket[];
+  merged_duplicates: (AutoRegisterTicket & { dup_count: number })[];
   missing_positions: number[];
 }
 export interface AutoRegisterResult {
@@ -740,7 +836,7 @@ export interface AutoRegisterResult {
   selected: number[];
   strategies: AutoRegisterStrategy[];
   total_registered: number;
-  total_skipped: number;
+  total_merged: number;
   policy: string;
 }
 
@@ -938,8 +1034,21 @@ export interface UserTicket {
     winners: Scorecard['winners'];
     per_number_z: number[];
   } | null;
+  dup_count?: number;
+  dup_labels?: string[];
+  same_number_ticket_ids?: number[];
+  duplicate?: boolean;
   created_at: string;
   outcomes: Outcome[];
+}
+
+/** S5.7 현재 대상 회차 컨텍스트 (GET /user/tickets/draws). */
+export interface TicketDraws {
+  next_draw: number;
+  latest_result_draw: number;
+  active_target_draw: number;
+  reason: 'next_recommended' | 'next_registered' | 'awaiting_next_recommendation' | 'none';
+  draws: Array<{ target_draw_no: number; count: number; evaluated: boolean }>;
 }
 
 // ---------- 성과 추적 ----------
@@ -1000,6 +1109,7 @@ export const api = {
   recommend: {
     strategies: () => get<StrategyInfo[]>('/api/v1/recommend/strategies'),
     create: (body: RecommendIn) => post<RecommendResponse>('/api/v1/recommend', body),
+    sequential: (body: SequentialIn) => post<SequentialResponse>('/api/v1/recommend/sequential', body),
     history: (params?: RecommendHistoryParams) => get<RecommendHistoryItem[]>('/api/v1/recommend/history', params),
     historySummary: (params?: Omit<RecommendHistoryParams, 'limit' | 'offset'>) =>
       get<RecommendHistorySummary>('/api/v1/recommend/history/summary', params),
@@ -1021,7 +1131,9 @@ export const api = {
   user: {
     evaluate: (body: TicketIn) => post<Scorecard>('/api/v1/user/tickets/evaluate', body),
     save: (body: TicketIn) => post<UserTicket>('/api/v1/user/tickets', body),
-    tickets: (limit?: number) => get<UserTicket[]>('/api/v1/user/tickets', { limit }),
+    tickets: (limit?: number, targetDrawNo?: number | null) =>
+      get<UserTicket[]>('/api/v1/user/tickets', { limit, target_draw_no: targetDrawNo ?? undefined }),
+    ticketDraws: () => get<TicketDraws>('/api/v1/user/tickets/draws'),
     remove: (ticketId: number) => del<unknown>(`/api/v1/user/tickets/${ticketId}`),
   },
 

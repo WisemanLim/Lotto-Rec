@@ -42,6 +42,17 @@ make test
 make local-stop
 ```
 
+Run with Docker instead of honcho (current env, S7.1 — same `./data` DB):
+
+```bash
+make local-stop                  # if honcho holds 8000/5173 (or use other ports, below)
+make docker-all                  # build + start api/web; api runs alembic upgrade head on start
+LOTTO_DOCKER_SEED=1 make docker-all   # empty DB → also import the full xlsx
+make docker-logs SVC=api         # [entrypoint] alembic upgrade head → uvicorn
+make docker-ps / docker-stop     # status / tear down (host ./data kept)
+LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all   # side by side with honcho
+```
+
 First-use flow: Settings → **run analysis (cohort A, quick)** → Validation → **run validation (replay 1,001–1,240)** → Recommend / My numbers / Tracking.
 Validation inserts the real cohort-B draws into the DB (labelled B), so the DB then holds 1,240 draws.
 
@@ -54,11 +65,15 @@ Validation inserts the real cohort-B draws into the DB (labelled B), so the DB t
 | `make local-all` / `local-logs` / `local-stop` / `local-restart` / `local-ps` | Start/tail/stop/restart/status of backend+frontend (honcho in background; `PROC_MGR=pm2`; `LOCAL_INFRA=` for optional docker infra) |
 | `make test` / `make lint` | pytest + vitest / ruff + mypy + eslint + tsc |
 | `make db-migrate` / `db-seed` / `db-reset` / `db-fresh` | Alembic / incremental xlsx import of cohort A (`python -m app.seed [--all|--max-draw N]`) / recreate SQLite / reset+seed |
+| `make reanalyze [PRESET=quick|report|deep] [COHORTS=A,B,ALL]` | **Back up the DB file (`data/backup/lotto_<UTC>.db`) and re-run analysis for cohorts A, B, ALL** (`python -m app.reanalyze`, trigger=reanalyze). Old runs are kept and pruned by `LOTTO_RUN_RETENTION` |
+| `make docker-all` / `docker-build` / `docker-logs` / `docker-stop` / `docker-restart` / `docker-ps` | **[docker, current env]** build & start backend (api) + frontend (web) containers in the background / build / logs (`SVC=api\|web`) / tear down / restart / status. Uses `.env.local` as env_file and for port mapping, shares `./data` (SQLite, cache, backups) and `./.docs` as volumes. **api runs `alembic upgrade head` on start** before uvicorn; `LOTTO_DOCKER_SEED=1 make docker-all` also imports the full xlsx. web is the Vite dev server proxying `/api` to `api:8000`. If honcho already holds the ports the target stops with a hint (`make local-stop`, or `LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all`) |
+| `make docker-migrate` / `docker-seed` / `docker-reanalyze` | [docker] migration only / full xlsx import (idempotent) / backup + re-analysis (`PRESET`, `COHORTS`) |
 | `make <env>-*` | dev/staging/prod container targets — kept for standard compatibility, unused |
 
 ## Environment (`.env.local`)
 
 Variable names are literal English translations of the Korean terms with a `LOTTO_` prefix. Full list: `.env.local.example`, PRD §10.
+Precedence (low → high): `.env.local.example` (defaults) → `.env` → `.env.local` (your values) → OS environment. After changing a value run `make local-restart` (uvicorn reload does not watch env files).
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -70,6 +85,7 @@ Variable names are literal English translations of the Korean terms with a `LOTT
 | `LOTTO_RANDOM_SEED` | 20260908 | Reproducibility seed |
 | `LOTTO_AUTO_RERUN_PRESET` | quick | Auto re-analysis after new draws (`off` to disable) |
 | `LOTTO_RUN_RETENTION` | 20 | Analysis runs to keep (0 = unlimited); latest per cohort and runs referenced by active experiments are protected |
+| `LOTTO_CROSS_DRAW_LAG` | 5 | **Cross-draw gap L** (1–50) for the previous→next draw co-occurrence analysis: lags 1..L individually plus the summed window; edge draws (first/last L) contribute only the pairs that exist inside the gap. After changing: `make local-restart`, then a new run (or `make reanalyze`). Current value visible in `GET /config` / Settings; the cross-draw page warns when the run's L differs |
 | `LOTTO_PRIZE_RANK3_DEFAULT` / `_RANK4_` / `_RANK5_` | 1500000 / 50000 / 5000 | Fixed prizes for ranks 3–5 (assumed, tracking only) |
 | `DATABASE_URL` | `sqlite:///./data/lotto.db` | Relative to project root; resolved to absolute |
 | `LOTTO_TIMEZONE` / `VITE_TIMEZONE` | Asia/Seoul | Display timezone (IANA). Stored as UTC; API returns ISO with `+00:00`; the UI converts and shows "KST (UTC+9)" |
@@ -80,20 +96,21 @@ Variable names are literal English translations of the Korean terms with a `LOTT
 |---|---|
 | Config | `GET /api/v1/config` |
 | Data | `POST /data/import` (xlsx/csv incremental, `?overwrite`) · `POST /data/draws` · `GET /data/draws[/{n}]` · `GET /data/summary` · `GET /data/imports` |
-| Analysis | `POST /analysis/runs` · `GET /analysis/runs[/latest|/{id}]` · `GET /analysis/runs/{id}/{section}` (summary, frequency, frequency_bonus, global, pairs, network, itemsets, groups, temporal, winners_model, null_summary, **diff_vs_previous**) · `DELETE /analysis/runs/{id}` · `POST /analysis/itemsets/query` |
+| Analysis | `POST /analysis/runs` · `GET /analysis/runs[/latest|/{id}]` · `GET /analysis/runs/{id}/{section}` (summary, frequency, frequency_bonus, global, pairs, network, itemsets, groups, temporal, **cross_draw**, winners_model, null_summary, diff_vs_previous) · `DELETE /analysis/runs/{id}` · `POST /analysis/itemsets/query` |
 | Validation | `POST /validation/runs` · `GET /validation/runs[/latest|/{id}]` · `GET /validation/runs/{id}/{kind}` (meta, backtest, scoring, replication, homogeneity) |
-| Recommend | `GET /recommend/strategies` · `POST /recommend` (→ sets[].params_used/experiment, analysis_basis, tickets[].`past_wins` = past 1st/2nd-prize draws matching the ticket, S4.9) · `GET /recommend/history?origin=user|backtest|all&…` (each row carries `past_wins`) · `GET /recommend/history/summary?origin=` · `POST /recommend/auto-register` {target_draw_no?, seed?} → draw 5 of 1..P at random, repeated target-draw-number times → top-5 positions by frequency → register each strategy's latest-batch tickets at those positions as my numbers (duplicates skipped, S4.10) |
+| Recommend | `GET /recommend/strategies` · `POST /recommend` (→ sets[].params_used/experiment, analysis_basis, tickets[].`past_wins` = past 1st/2nd-prize draws matching the ticket, S4.9) · `GET /recommend/history?origin=user|backtest|all&…` (each row carries `past_wins`) · `GET /recommend/history/summary?origin=` · `POST /recommend/sequential` {strategies?, count?, seed?, max_shared?, save} → **run every strategy in catalog order** (one batch per strategy, no extra uniform control, failing strategies reported in `failed` and skipped; S4.11) · `POST /recommend/auto-register` {target_draw_no?, seed?} → draw 5 of 1..P at random, repeated target-draw-number times → top-5 positions by frequency → register each strategy's latest-batch tickets at those positions as my numbers (same numbers + target draw are ★ merged → `merged_duplicates`/`total_merged`, S4.10·S5.6) |
 | Experiments (improvement loop) | `GET /experiments/strategy-params` · `POST /experiments/runs` · `GET /experiments/runs[?strategy]` · `GET /experiments/runs/{id}` · `GET /experiments/lineage?strategy=` · `GET /experiments/active` · `POST /experiments/runs/{id}/activate` · `POST /experiments/deactivate` · `DELETE /experiments/runs/{id}` |
-| User | `POST /user/tickets/evaluate` · `POST /user/tickets` · `GET /user/tickets` · `DELETE /user/tickets/{id}` |
+| User | `POST /user/tickets/evaluate` · `POST /user/tickets` (same numbers + same target draw → merged into the existing row: `dup_count`+1, `dup_labels` appended, S5.6) · `GET /user/tickets?target_draw_no=` (draw filter, S5.7; each row: `dup_count` · `dup_labels` · `same_number_ticket_ids` · `duplicate`) · `GET /user/tickets/draws` (**active target draw** context: next_draw · latest_result_draw · active_target_draw · reason · draws[{target_draw_no,count,evaluated}] — next draw once a next-draw recommendation is saved / ticket registered, otherwise the most recent registered draw) · `DELETE /user/tickets/{id}` |
 | Tracking | `GET /tracking/summary?origin=user|backtest` · `GET /tracking/outcomes?draw_no&strategy&source&origin&limit(≤50000)&offset` (each row carries `past_wins`) · `GET /tracking/outcomes/summary` · `GET /tracking/pending` · `POST /tracking/evaluate/{draw_no}` |
 
 ## Statistical engine (PRD §4)
 
-Joe-adjusted χ² (J = (N−1)/(N−k)·X²), Coronel-Brizio order-statistic Q test, 990-pair calibrated lift with BH/BY and Westfall–Young maxT, Genest pair X², candidate triples and conditional P(1|2,3), multivariate-hypergeometric group patterns, MC null distributions for sum/consecutive/last-digit features, temporal tests (overlap, lag autocorrelation + maxT, runs, gap KS, Ljung–Box, CUSUM/PELT), negative-binomial winners model, and 8 recommendation strategies (weighted sampling without replacement via A-Res, pair-sequential, typicality filter, low-competition).
+Joe-adjusted χ² (J = (N−1)/(N−k)·X²), Coronel-Brizio order-statistic Q test, 990-pair calibrated lift with BH/BY and Westfall–Young maxT, Genest pair X², candidate triples and conditional P(1|2,3), multivariate-hypergeometric group patterns, MC null distributions for sum/consecutive/last-digit features, temporal tests (overlap, lag autocorrelation + maxT, runs, gap KS, Ljung–Box, CUSUM/PELT), **cross-draw co-occurrence** (S2.13: directed 45×45 matrix of number i in draw t → number j in draw t+ℓ, diagonal = repeats, lags 1..L individually plus the summed window, null cell probability (k/N)², margin-conditioned 2×2 independence z so frequent numbers are not inflated, BH/BY and MC maxT per lag / window / any-lag, edge draws partially included), negative-binomial winners model, and 8 recommendation strategies (weighted sampling without replacement via A-Res, pair-sequential, typicality filter, low-competition).
 
 ## Validation results (2026-09-08, PRD §17)
 
 - Cohorts A, B and ALL are all consistent with the uniform null (J p = 0.888 / 0.393 / 0.877; maxT, Genest, CUSUM non-significant).
+- **Re-analysis (2026-09-14, including draw 1,241, PRD §17.5)**: cohorts A (1–1,000), B (1,001–1,241), ALL (1–1,241) J p = 0.888 / 0.396 / 0.874; **cross-draw co-occurrence (window 1..5)** max-cell maxT p = 0.087 / 0.396 / 0.125, zero FWER-significant cells, repeat z = 0.70 / −1.77 / 0.27 — no evidence of dependence between numbers of previous and following draws.
 - Replay backtest 1,001–1,240 × 8 strategies × 10 tickets: **every strategy "no difference from uniform"**, zero rank-1–3 hits, replication 0/29 (H0 expectation 2.5%).
 - Improvement loop (`analysis_weighted`, K=8, tune 1,001–1,120 → holdout 1,121–1,240): best tune diff +0.007 (H0 best-of-8 expectation +0.046) → holdout −0.021; generation 2: +0.025 → −0.058. **Gains vanish on holdout (regression to the mean)** — PRD §17.4.
 
@@ -119,16 +136,26 @@ Joe-adjusted χ² (J = (N−1)/(N−k)·X²), Coronel-Brizio order-statistic Q t
 | impl/15th | S4.10 'Auto-register as my numbers' in recommendation history (random top-5 positions → latest-batch tickets per strategy, `POST /recommend/auto-register`) | PASS 5/5 (pytest 62, vitest 31) |
 | impl/16th | S4.7/S4.10 UX — auto-register rule shown only as button tooltip; history-row 'register as my number' registers immediately without a confirm dialog | PASS 4/4 (pytest 62, vitest 31) |
 | impl/17th | S5.5 My Numbers 'Try a draw with saved numbers' — random-frequency rule over 1..N saved tickets (`lib/lottery.ts`) stars 5 tickets, UI state only (no DB write) | PASS 6/6 (pytest 62, vitest 34) |
+| impl/18th | S5.6 My Numbers **★ duplicate ×n badge** — same numbers + same target draw merge into one row (`user_ticket.dup_count/dup_labels`, Alembic 5b12a3e1), same numbers on another draw are linked via `same_number_ticket_ids`, auto-register skip→merge, glossary term `duplicate_ticket` (repeated generation ≠ evidence of significance) | PASS 8/8 (pytest 63, vitest 35) |
+| impl/19th | Bug fix — white screen when evaluating My Numbers with a bonus (scorecard `bonus` dict → int, `bonus_info` split out, defensive ScorecardView render) | PASS 4/4 (pytest 63, vitest 37) |
+| impl/20th | Bug fix — `.env.local` values ignored (pydantic-settings gives the later `env_file` precedence, so the example file overrode user values; reordered to example → `.env` → `.env.local`, precedence regression test) | PASS 6/6 (pytest 65, vitest 37) |
+| impl/27th | S7.1 **docker compose runtime** — Dockerfiles fixed (lockfiles, `.dockerignore`, `/srv/lotto` root), api entrypoint `alembic upgrade head` (+ optional seed) → uvicorn, web Vite proxy → `api:8000`, 9 `make docker-*` targets. Verified live on 18000/15173: migration log, health, API (1,241 draws), frontend proxy, fresh-DB migration (3 revisions), honcho port-conflict guard | PASS 8/8 (pytest 76, vitest 45) |
+| impl/26th | UI fix — "추천 생성" / "추천 생성(순차)" rendered on two lines → button slot spans 2 columns, no wrap | PASS 3/3 (vitest 45) |
+| impl/25th | S4.11 **Sequential recommend** — button right of "추천 생성" runs every strategy in order with the same options (one batch per strategy, `POST /recommend/sequential`), per-strategy result sections + summary | PASS 5/5 (pytest 76, vitest 45) |
+| impl/24th | User report "cross-draw `.env` setting not applied" — engine did apply it; `/config` and Settings did not expose it. Exposed `lotto_cross_draw_lag`·`lotto_min_effect_delta`·`lotto_run_retention`, cross-draw page shows env-vs-run L mismatch notice | PASS 5/5 (pytest 74, vitest 44) |
+| impl/23rd | S5.7 **saved-numbers draw switch & filter** — right after a draw result is entered the old tickets and their outcomes stay visible; **once a recommendation for the next draw is saved** the list switches to the next draw (previous draw hidden, not deleted), draw filter (auto/specific/all), `GET /user/tickets/draws` | PASS 6/6 (pytest 74, vitest 42) |
+| impl/22nd | Bug fix — glossary tooltip text overflowed its box (inherited `whitespace-nowrap` from table headers → tooltip forces `whitespace-normal break-words` + viewport width cap) | PASS 3/3 (vitest 40) |
+| impl/21st | S2.13 **cross-draw co-occurrence** (prev i → next j 45×45, lags 1..L + window, conditional independence z · MC maxT, edge draws partially included) · `LOTTO_CROSS_DRAW_LAG` · page `/cross-draw` · `make reanalyze` (backup, then re-run cohorts A/B/ALL including draw 1,241) | PASS 11/11 (pytest 72, vitest 39) |
 
 ## Layout
 
 ```
 Lotto-Rec/
 ├── .docs/                # PRD.md (source of truth), research notes, lotto(~1240).xlsx
-├── backend/app/{main.py, api/, core/, core/recommend/, services/, db/, schemas/, seed.py}
+├── backend/{app/{main.py, api/, core/, core/recommend/, services/, db/, schemas/, seed.py, reanalyze.py}, alembic/, Dockerfile, docker-entrypoint.sh}
 ├── frontend/src/{pages,components,api,hooks,lib}/
 ├── test/{dev-env, impl/<Nth>, backend}/
-├── data/                 # lotto.db, cache/ (git-ignored)
+├── data/                 # lotto.db, cache/, backup/ (git-ignored; backup/ is written by make reanalyze)
 ├── Makefile Procfile.dev ecosystem.config.cjs docker-compose.yml
 └── .env.local(.example)  CUSTOM_STACK.md  COMPLIANCE.md
 ```
@@ -143,4 +170,13 @@ Lotto-Rec/
 | Recommendation says `fallback: winners_model 없음` | No completed cohort-A run yet — run an analysis first |
 | Tailwind config change (e.g. darkMode) not reflected | Vite dev server loads tailwind.config at start → `make local-restart` |
 | History shows few rows even with "all" page size | Default origin = user-generated (saved) tickets only. Switch the origin filter to "validation replay" or "all" to see simulation tickets |
+| Changed `LOTTO_CROSS_DRAW_LAG` but the cross-draw page looks the same / not shown in Settings | The gap is frozen at run creation (section field `max_lag`). Order: edit `.env.local` → `make local-restart` → check `lotto_cross_draw_lag` in Settings → new run or `make reanalyze`. The cross-draw page shows a blue notice when the run's L differs from the current setting (v1.11.1) |
+| Only one number's diagonal (repeat) cell looks large on the cross-draw page | That number is simply frequent overall. The displayed/tested z is the margin-**conditioned** independence z, which is not inflated (the unconditional expectation is shown as reference column `expected`) |
+| "My numbers" list looks empty after entering a draw result | By design (S5.7): the list switches to the next draw the moment a next-draw recommendation is saved (or a next-draw ticket registered). Older tickets are not deleted — pick that draw or "all draws" in the target-draw filter |
+| (?) tooltip text in a table header runs off the box on one line | `DataTable` th/td `whitespace-nowrap` is inherited by the tooltip. v1.10.1 forces `whitespace-normal break-words` and `max-w-[calc(100vw-2rem)]` on the `Term` tooltip — it wraps and grows vertically |
+| `make docker-all` stops with "honcho 가 실행 중" | Port-conflict guard (8000/5173). Run `make local-stop` first, or `LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all` |
+| api container ignores `.env.local` / path errors | compose injects `.env.local` as env_file (quoted values handled). Container root is `/srv/lotto` (`./data/lotto.db` → `/srv/lotto/data/lotto.db`). After edits: `make docker-restart SVC=api` |
+| web container cannot reach the API | web is the Vite dev server proxying `/api` to `VITE_API_BASE=http://api:8000`; it starts only after api is healthy. Check `make docker-logs SVC=api` |
 | `This project is configured to use 9.9.0 of pnpm` | `packageManager` pin ≠ global pnpm. Always run `pnpm` inside `frontend/` (Makefile/Procfile use `cd frontend &&`) |
+| **White screen after evaluating with a bonus** | scorecard `bonus` came back as an object and `BallRow` rendered it → React crash. v1.9.1 pins `bonus` to int\|null, moves details to `bonus_info`, frontend renders defensively |
+| **`.env.local` values (e.g. `LOTTO_NUMBER_RECOMMENDATION_COUNT=20`) not applied** | pydantic-settings gives precedence to the **later** file in the `env_file` tuple, and `.env.local.example` came last, so defaults always won. v1.9.2 reorders to example → `.env` → `.env.local`. Env-file edits are not picked up by uvicorn reload — run `make local-restart` |

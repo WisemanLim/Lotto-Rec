@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 | :-- | :-- |
-| 문서 버전 | 1.8 (S5.5 등록된 번호로 추첨 시도) |
+| 문서 버전 | 1.13 (S7.1 docker compose 구동 · S4.11 추천 생성(순차) · S5.7 저장된 번호 회차 전환·필터 · 회차간 교차 공출현 S2.13 · `LOTTO_CROSS_DRAW_LAG` · 군 A/B/전체 재분석 1,241회 포함) |
 | 작성일 | 2026-09-08 |
 | 상태 | Draft → 구현 중 보완 (living document) |
 | 근거 문서 | `.docs/Perplexity-로또번호 무작위 추출 통계분석.md`, `.docs/lotto(~1240).xlsx` |
@@ -248,6 +248,7 @@ maxT(Westfall–Young): 시뮬레이션마다 $\max_{ij}|z_{ij}|$ 등 최대통�
 - 인접 회차 중복수 $O_t=|D_t\cap D_{t+1}|\sim\mathrm{Hypergeom}(N,k,k)$, $E=k^2/N=0.8$; lag 1~$L$ 확장.
 - 번호별 이진 시계열 자기상관 $\rho_i(\ell)$, Ljung–Box, 불균형 확률(6/45)을 반영한 runs test, 출현 간격(gap)의 기하분포 적합.
 - lagged cross-correlation은 사전 지정 lag·번호군 또는 maxT로만.
+- **회차간 교차 공출현 (v1.10)**: 회차 $t$ 의 번호 $i$ 와 $t+\ell$ 의 번호 $j$ 가 함께 나온 횟수 $M^{(\ell)}_{ij}=\sum_t \mathbb 1[i\in D_t]\,\mathbb 1[j\in D_{t+\ell}]$ ($i,j$ 순서 있음, $i=j$ 포함 → 대각은 lag-$\ell$ 재출현). 독립 영가설에서 모든 셀은 $p_\times=(k/N)^2=4/225$, 기대 $=(T-\ell)\,p_\times$. 이는 §4.4 의 회차 **내** 쌍 검정($p_{ij}=k(k-1)/(N(N-1))$, 구조적 음상관)과 달리 상관이 정확히 0 인 독립 사건이다. 간격 $L$(`LOTTO_CROSS_DRAW_LAG`, 기본 5) 안의 모든 lag $\ell=1..L$ 을 개별 분석하고, 합산 창(window) $M^{(1..L)}=\sum_\ell M^{(\ell)}$ 도 분석한다. **경계 처리**: 앞 $L$ 회차(이전 회차 부족)와 마지막 $L$ 회차(이후 회차 부족)를 버리지 않고 간격 안에 존재하는 쌍 $(t,t+\ell)$, $t+\ell\le T$ 만 세어 모두 포함한다(lag $\ell$ 의 쌍 수 $=T-\ell$, 창 전체 $=\sum_\ell (T-\ell)$). 셀별 이항 p 는 같은 회차를 공유하는 쌍 간 약한 의존으로 근사치이며, 2,025 셀 FWER 판정은 조건부 MC maxT(lag 별·창·전 lag 최대)로 한다.
 - 변화점: CUSUM, PELT(`ruptures`), 이동창 편향 점수. 후보 변화점은 전후 구간 재검정.
 - NIST SP 800-22 계열은 번호별 이진열의 **보조 진단**으로만 사용.
 
@@ -348,6 +349,7 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 | S2.10 MC 엔진 | 벡터화 시뮬레이터, 배치·캐시, seed·B 기록, 진행률 스트리밍 | P0 |
 | S2.11 다중검정 모듈 | Bonferroni/Holm/BH/BY 공통 함수, maxT 헬퍼 | P0 |
 | S2.12 당첨자수 모형 | 조합 특성 → 1등/2등 당첨자수 음이항 회귀, 계수·적합도 리포트 | P1 |
+| S2.13 회차간 교차 공출현 (v1.10, 사용자 요청) | 전회차 번호 $i$ → 후회차 번호 $j$ 의 45×45 방향 행렬 $M^{(\ell)}$, lag $\ell=1..L$ 개별 + 창 합산, 기대 $(T-\ell)(k/N)^2$·z·이항 p·BH/BY q·MC maxT(lag별·창·전 lag), 대각(재출현) 요약, 경계 회차는 간격 내 가능한 쌍만 포함, $L$ 은 `LOTTO_CROSS_DRAW_LAG`. 결과 섹션 `cross_draw`, 화면 '회차간 연관성' | P0 |
 
 모든 결과는 §9 스키마로 저장되고 `analysis_run_id`로 조회된다.
 
@@ -382,7 +384,8 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 - S4.7 (v0.6) 추천 결과의 각 티켓 카드와 추천 이력의 각 행에서 **'내 번호로 등록'** 가능(`POST /user/tickets` 재사용, label = `추천 <전략> #rec_id`, target_draw_no 승계). 등록 후 성과 추적 대상(전략 `user`)이 된다. (v1.7) 추천 카드는 확인 대화상자 후 등록, **추천 이력 행은 확인 없이 즉시 등록**한다(등록 완료 표시·내 번호 링크로 피드백).
 - S4.8 (v0.7) 추천 응답은 사용된 파라미터·활성 실험(세대·홀드아웃 성과)·분석 근거(군 A run, 이력 T, 상위 |z| 번호)를 포함하고 UI 에 표시한다(E9 S9.4).
 - S4.9 (v1.5, 사용자 요청) **과거 1·2등 일치 표시**: 추천 티켓의 6개 번호가 적재된 과거 회차 중 어느 회차의 1등(본번호 6개 동일) 또는 2등(본번호 5개 + 해당 회차 보너스)에 해당하면, 그 회차 번호를 **'티켓' 열(추천 카드·추천 이력·성과 추적 결과 표)** 에 공 옆에 `(386)` 형식으로 표시한다. 글씨는 기본 데이터보다 작고 회색 계통으로 흐릿하게, 툴팁에 등수(`386회 1등`)를 둔다. 복수 회차는 공백으로 나열한다. 응답 필드 `past_wins: [{draw_no, rank}]`(rank ∈ {1,2}, 회차 오름차순)를 `POST /recommend` 티켓·`GET /recommend/history` 행·`GET /tracking/outcomes` 행에 포함한다. 통계적 의미는 없음(균등 추첨에서 어느 티켓이든 동일 확률)을 §4.11 고지에 따라 해석한다.
-- S4.10 (v1.6, 사용자 요청) **내 번호로 자동 등록**: 추천 이력 필터 바의 '필터 초기화' 우측 버튼. 동작 — (a) 대상 회차 $D$(필터의 대상 회차, 미선택 시 최신 회차+1)를 정하고, (b) $1..P$($P$ = 추천 개수 `LOTTO_NUMBER_RECOMMENDATION_COUNT`, 기본 10)에서 서로 다른 5개를 무작위로 뽑는 시행을 **$D$ 회 반복**해 번호별 출현 빈도를 집계, (c) 빈도 상위 5개(동률은 작은 번호 우선)를 **티켓 위치**로 선택, (d) 대상 회차 $D$ 의 사용자 생성(origin=user) 추천 이력에서 **전략별 최신 batch** 의 티켓을 rec_id 오름차순 1..n 으로 번호 매겨 선택 위치의 티켓을 `POST /user/tickets` 와 동일 규칙(label `추천 <전략> #rec_id`, target_draw_no=$D$)으로 등록한다. 같은 번호·대상 회차가 이미 등록돼 있으면 건너뛰고(중복 방지), 위치 > n 인 항목은 누락으로 보고한다. API `POST /recommend/auto-register` {target_draw_no?, seed?} → {selected, counts, rounds, seed, strategies[] (registered/skipped/missing)}. seed 미지정 시 무작위이며 사용된 seed 를 응답에 남겨 재현 가능. 선택 절차는 오락용 규칙일 뿐 어떤 티켓도 당첨확률이 같다(§4.11). (v1.7) 규칙 설명은 버튼 하단 문구가 아니라 **버튼 마우스오버 툴팁**(`title`)으로만 표시한다.
+- S4.10 (v1.6, 사용자 요청) **내 번호로 자동 등록**: 추천 이력 필터 바의 '필터 초기화' 우측 버튼. 동작 — (a) 대상 회차 $D$(필터의 대상 회차, 미선택 시 최신 회차+1)를 정하고, (b) $1..P$($P$ = 추천 개수 `LOTTO_NUMBER_RECOMMENDATION_COUNT`, 기본 10)에서 서로 다른 5개를 무작위로 뽑는 시행을 **$D$ 회 반복**해 번호별 출현 빈도를 집계, (c) 빈도 상위 5개(동률은 작은 번호 우선)를 **티켓 위치**로 선택, (d) 대상 회차 $D$ 의 사용자 생성(origin=user) 추천 이력에서 **전략별 최신 batch** 의 티켓을 rec_id 오름차순 1..n 으로 번호 매겨 선택 위치의 티켓을 `POST /user/tickets` 와 동일 규칙(label `추천 <전략> #rec_id`, target_draw_no=$D$)으로 등록한다. 같은 번호·대상 회차가 이미 등록돼 있으면 (v1.9) 새 행을 만들지 않고 기존 행에 **병합**(`dup_count`+1, S5.6 ★ 표시)하며, 위치 > n 인 항목은 누락으로 보고한다. API `POST /recommend/auto-register` {target_draw_no?, seed?} → {selected, counts, rounds, seed, strategies[] (registered/merged_duplicates/missing), total_registered, total_merged}. seed 미지정 시 무작위이며 사용된 seed 를 응답에 남겨 재현 가능. 선택 절차는 오락용 규칙일 뿐 어떤 티켓도 당첨확률이 같다(§4.11). (v1.7) 규칙 설명은 버튼 하단 문구가 아니라 **버튼 마우스오버 툴팁**(`title`)으로만 표시한다.
+- S4.11 (v1.12, 사용자 요청) **추천 생성(순차)**: 추천 생성 폼의 '추천 생성' 버튼 우측 '추천 생성(순차)' 버튼. 클릭 시 전략 선택에서 제공하는 **모든 전략을 카탈로그 순서대로** 같은 옵션(추천 개수·seed·최대 공유·저장)으로 한 번에 생성한다. 전략마다 별도 batch(성과 추적·S4.10 '전략별 최신 batch' 규칙과 호환), 균등 기준선은 목록의 `uniform` 전략 자체가 담당하므로 전략별 control 은 붙이지 않는다. 한 전략이 실패해도 나머지는 계속 진행하고 `failed` 로 보고. 결과는 전략별 추천 결과 섹션을 순서대로 표시하며 상단에 요약(전략 수·티켓 수·대상 회차·실패). API `POST /recommend/sequential` {strategies?, count?, seed?, max_shared?, save} → {sequence_id, target_draw_no, strategies, results[RecommendOut], failed[{strategy,error}], total_tickets}.
 
 ### E5. 사용자 예측(통계기반 평가) (P0)
 
@@ -391,6 +394,8 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 - S5.3 "이 조합은 통계적으로 특이한가?"를 MC 기반 전형성 p-value로 답하되, 특이성이 당첨확률과 무관함을 함께 표시.
 - S5.4 사용자 저장 목록(로컬 DB), 이후 회차 결과와 자동 대조.
 - S5.5 (v1.8, 사용자 요청) **등록된 번호로 추첨 시도**: '저장된 번호' 타이틀 우측 버튼. S4.10 과 같은 규칙이되 위치 풀이 $1..N$($N$ = 현재 저장된 번호 개수, 화면에 로드된 목록 순서 = 위치)이며, $\min(5,N)$개 비복원 추출을 다음 회차 번호(최신 회차+1)만큼 반복해 빈도 상위 $\min(5,N)$ 위치를 선택한다. 선택된 저장 번호는 '삭제' 버튼 좌측에 **별(★) 아이콘**으로 표시하며, 선택 결과는 **DB 에 저장하지 않고 화면 상태로만** 유지한다(재클릭 시 재추첨, 새로고침 시 소멸). 규칙 설명은 버튼 툴팁. 추천 이력의 '내 번호 보기' 링크(S4.7)로 진입해 저장된 번호를 확인할 수 있어야 한다.
+- S5.6 (v1.9, 사용자 요청) **중복 등록 ★ 표시**: 추천→내 번호 등록(또는 직접 저장) 시 같은 6개 번호가 이미 저장되어 있으면, 같은 대상 회차인 경우 새 행을 만들지 않고 기존 행에 **병합**(`dup_count`+1, 라벨 누적)하고, 다른 회차면 새 행이되 동일 번호 그룹으로 묶는다. 저장 목록에 ★ 아이콘과 횟수(×n)를 표시하고, 응답에 `duplicate`·`dup_count`·`same_number_ticket_ids` 를 포함한다. 툴팁(용어 `duplicate_ticket`)에 정직한 해석을 명시: 여러 배치에서 같은 조합이 반복 생성되는 것은 전략 가중치(핫·z·lift)가 같은 방향으로 편향된 결과이며, 그 자체로 통계적 유의성이나 당첨확률 상승의 증거는 아니다 — 서로 다른 전략·seed 에서 독립적으로 반복될 때만 '관심 후보'로 다루고, 판단은 검증·성과 추적으로 한다.
+- S5.7 (v1.11, 사용자 요청) **저장된 번호의 회차 전환·회차 필터**: 내 번호 '저장된 번호' 목록은 **현재 대상 회차**의 티켓만 기본 표시한다. 현재 대상 회차 규칙 — 최신 결과 회차를 $R$(=DB 최대 회차), 다음 회차를 $R+1$ 이라 할 때, (a) $R+1$ 을 대상으로 **저장된 추천**(origin=user)이 있거나 $R+1$ 대상 내 번호가 등록돼 있으면 현재 대상 회차 = $R+1$; (b) 아니면 저장된 내 번호 중 **가장 최근 대상 회차**(보통 $R$, 결과 등록 직후라 낙첨·등수 확인 가능); (c) 내 번호가 없으면 $R+1$. 즉 설정/실행에서 추첨 결과를 등록한 직후에는 기존 번호와 결과가 그대로 보이고, 추천에서 **다음 회차 추천을 저장한 시점**에 목록이 다음 회차로 전환되어 이전 회차 번호는 기본 목록에서 사라진다(삭제 아님 — 다음 회차에 해당하는 내 번호가 없기 때문). 회차 필터(자동 = 현재 대상 회차 / 특정 회차(건수·결과 확정 여부 표시) / 전체)로 이전 회차 번호를 언제든 볼 수 있다. '등록된 번호로 추첨 시도'(S5.5)의 위치 풀 $N$ 은 표시 중인 목록 기준. API `GET /user/tickets/draws` → {next_draw, latest_result_draw, active_target_draw, reason, draws[{target_draw_no, count, evaluated}]}, `GET /user/tickets?target_draw_no=`.
 
 ### E6. 대시보드 (P0~P1)
 
@@ -403,7 +408,7 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 | 시간 분석 | overlap 시계열, 자기상관 히트맵, runs, 변화점 표시 | P1 |
 | 검증 (A→B) | 재현성 표, 전략 backtest 표·일치수 분포 비교, 스코어링 규칙 차이 CI | P0 |
 | 추천 | 전략 선택·개수·커버리지 옵션 → 티켓 카드 + 스코어카드 + backtest 요약 | P0 |
-| 내 번호 | 입력 → 스코어카드, 저장 목록 | P0 |
+| 내 번호 | 입력 → 스코어카드, 저장 목록(현재 대상 회차 기본 + 회차 필터, S5.7) | P0 |
 | 용어 사전 | 전 용어 목록(분류·검색·링크) — 화면 곳곳의 `Term` 툴팁과 동일 데이터 | P1 |
 | 성과 추적 | 전략별 누적 성과(회차 × 티켓 일치수, 등수별 적중, 균등 영분포 대비 z/p, 누적 기대 vs 실제 곡선), 미추첨 대기 티켓, 추첨 결과 입력/업로드 진입점 | P0 |
 | 설정/실행 | 데이터 적재(증분 리포트), 군 경계, α, 보정법, MC 반복수·seed, 자동 재실행 프리셋, 실행 이력 | P0 |
@@ -418,6 +423,7 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 
 - `.env.local` 로드(pydantic-settings). 변수는 §10.
 - 분석 프리셋: `quick`(B=10k), `report`(B=100k), `deep`(B=500k). **Q3 확정**: deep은 B=500,000을 기본값으로 정의하며 별도 실행 시간 목표를 두지 않는다(백그라운드 실행 + 진행률 표시로 대응).
+- S7.1 (v1.13, 사용자 요청) **Docker 구동(현재 환경)**: honcho 대신 `docker compose` 로 backend(api)·frontend(web) 를 컨테이너로 기동한다. `make docker-all`(빌드+기동) / `docker-build` / `docker-logs` / `docker-stop` / `docker-restart` / `docker-ps` / `docker-migrate`(alembic upgrade head) / `docker-seed`(xlsx 전체 적재) / `docker-reanalyze`. api 컨테이너는 시작 시 **`alembic upgrade head` 를 자동 실행**한 뒤 uvicorn 을 띄우고(`LOTTO_DOCKER_SEED=1` 이면 시드 적재도), 호스트 `./data`(SQLite·cache·backup)·`./.docs`(원천 xlsx, 읽기 전용)를 볼륨으로 공유해 honcho 실행과 같은 DB 를 쓴다. 컨테이너 안에서 프로젝트 루트는 `/srv/lotto`(backend WORKDIR `/srv/lotto/backend` → `PROJECT_ROOT` 규칙 유지). web 컨테이너는 Vite dev 서버(`--host 0.0.0.0`)로 `/api` 를 `http://api:8000` 에 프록시(`VITE_API_BASE`). 설정은 `.env.local` 을 `env_file` 로 주입하고 포트 매핑도 `LOTTO_BACKEND_PORT`/`LOTTO_FRONTEND_PORT` 를 따른다(honcho 와 동시 실행 시 포트 충돌 → `make docker-all` 이 사전 점검). 이미지는 `uv.lock`/`pnpm-lock.yaml` 고정 설치, `.dockerignore` 로 호스트 `.venv`/`node_modules` 제외. api 는 `/health` healthcheck, web 은 api healthy 후 기동.
 
 ### E8. 성과 추적 (P0) — Q2 확정
 
@@ -445,7 +451,7 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 
 | 항목 | 요구 |
 | :-- | :-- |
-| 운영 | local 전용. `make local-all`로 backend(8000)+frontend(5173) 동시 기동(honcho). 인증 없음, 외부 네트워크 불필요 |
+| 운영 | local 전용. `make local-all`로 backend(8000)+frontend(5173) 동시 기동(honcho) 또는 `make docker-all`(docker compose, S7.1). 인증 없음, 외부 네트워크 불필요(이미지 빌드 시에만 패키지 다운로드) |
 | 성능 | 1,240회 기준 단일·쌍·그룹 분석 < 2초(MC 제외). MC B=10k 쌍 maxT < 60초(벡터화, 배치). 장기 작업은 백그라운드 + 진행률 |
 | 재현성 | 모든 run에 데이터 해시·설정·seed·패키지 버전 저장. 동일 입력 → 동일 출력 |
 | 정확성 | 이론값 단위테스트(예: $p_{ij}=1/66$, $E[O_t]=0.8$, $\mu_i$, $J$ 계수), MC 검정의 균등 데이터 대상 type-I error ≈ α 확인 |
@@ -478,7 +484,7 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 | 프론트 | React 18 + TypeScript + Vite, TanStack Query, react-plotly.js, Tailwind CSS, shadcn/ui | Streamlit(단일 앱 요구와 불일치, 커스텀 UI 한계) |
 | 테스트 | pytest, hypothesis(속성 테스트), vitest, Playwright(P2) | — |
 | 품질 | ruff, mypy, ESLint, Prettier, pre-commit | — |
-| 실행 | Makefile(`make local-all/local-logs/local-stop/test/lint`, honcho Procfile.dev), 선택 docker-compose | — |
+| 실행 | Makefile(`make local-all/local-logs/local-stop/test/lint`, honcho Procfile.dev) 또는 `make docker-all/docker-logs/docker-stop/docker-migrate`(docker compose, api 시작 시 alembic 자동) | — |
 
 ### 8.3 구조
 
@@ -553,7 +559,7 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | `ticket_outcome` | outcome_id, ticket_ref(rec_id or ticket_id), source(recommendation/user), strategy, draw_no, main_matches, bonus_match, rank, prize_amount, evaluated_at |
 | `experiment` | experiment_id, name, strategy, params, parent_id, iteration, tune_from/to, holdout_from/to, n_tickets, seed, search, n_candidates, candidates(json), metrics_tune, metrics_holdout, h0_benchmark, status, is_active, created_at |
 | `import_log` | import_id, filename, data_hash, inserted, skipped_duplicate, conflicts(json), invalid(json), inserted_draws(json), triggered_run_id, created_at |
-| `analysis_result` | id, run_id, section(summary/frequency/frequency_bonus/global/pairs/network/itemsets/groups/temporal/winners_model/null_summary), payload(json) |
+| `analysis_result` | id, run_id, section(summary/frequency/frequency_bonus/global/pairs/network/itemsets/groups/temporal/cross_draw/winners_model/null_summary/diff_vs_previous), payload(json) |
 | `validation_run` / `validation_result` | validation_id, run_id_a, params, status, progress, stage / kind(meta/backtest/scoring/replication/homogeneity), payload |
 
 ---
@@ -580,9 +586,10 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | `LOTTO_PRIZE_RANK3_DEFAULT` / `_RANK4_` / `_RANK5_` | 3·4·5등 고정 당첨금 | 1,500,000 / 50,000 / 5,000 | 회차 데이터 부재 시 성과 추적용 가정값 (Q4) |
 | `LOTTO_RANDOM_SEED` | 난수 시드 | 20260908 | 재현성 |
 | `LOTTO_MIN_EFFECT_DELTA` | 최소 효과크기 | 0.25 | 네트워크 엣지 $\lvert\mathrm{Lift}^*-1\rvert\ge\delta$ |
+| `LOTTO_CROSS_DRAW_LAG` | 회차간 전/후 간격 | 5 | 회차간 교차 공출현(S2.13)의 최대 lag $L$ (1–50). lag 1..$L$ 개별 + 창 합산, 경계 회차는 간격 내 가능한 쌍만 포함. 변경 후 backend 재시작·재분석 필요(run 생성 시 고정, 섹션 `max_lag`). `/config` 로 노출(v1.11.1) |
 | `LOTTO_BACKEND_PORT` / `LOTTO_FRONTEND_PORT` | 포트 | 8000 / 5173 | 로컬 바인딩 127.0.0.1 |
 
-`.env.local.example`을 저장소에 포함하고 `.env.local`은 gitignore.
+`.env.local.example`을 저장소에 포함하고 `.env.local`은 gitignore. (v1.9.2) 로드 우선순위(낮→높): `.env.local.example` → `.env` → `.env.local` → OS 환경변수 — pydantic-settings 는 `env_file` 튜플의 뒤 파일이 앞 파일을 덮어쓰므로 example 을 맨 앞에 둔다.
 
 ---
 
@@ -607,13 +614,15 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | GET | `/api/v1/validation/runs/{id}` | 재현성·동질성·backtest·scoring 결과 |
 | POST | `/api/v1/recommend` | {strategy, count?, seed?, coverage?, constraints?} → tickets + scorecards + `past_wins`(과거 1·2등 회차, S4.9) + backtest 요약 |
 | POST | `/api/v1/recommend/auto-register` | {target_draw_no?, seed?} → 무작위 빈도 상위 5 위치 → 전략별 최신 batch 티켓을 내 번호로 등록 (S4.10) |
+| POST | `/api/v1/recommend/sequential` | (S4.11) 모든 전략(또는 `strategies[]`) 순차 생성 — {strategies?, count?, seed?, max_shared?, save} → {sequence_id, target_draw_no, strategies, results[], failed[], total_tickets} |
 | GET | `/api/v1/recommend/history` · `/summary` | 추천 이력(필터: origin, strategy, batch_id, target_draw_no; limit ≤50000, offset) — 행마다 `past_wins` 포함 |
 | GET | `/api/v1/experiments/strategy-params` | 전략별 파라미터 스키마 |
 | POST | `/api/v1/experiments/runs` | {strategy, base_params?, parent_id?, search, n_candidates, tune_from/to, holdout_from/to, tickets_per_draw, seed, sync} → experiment |
 | GET | `/api/v1/experiments/runs[?strategy]` · `/{id}` · `/lineage?strategy=` · `/active` | 실험 목록·상세·계보(추이·Spearman)·활성 버전 |
 | POST | `/api/v1/experiments/runs/{id}/activate` | 활성 파라미터 지정 |
-| POST | `/api/v1/user/tickets/evaluate` | {numbers[6], bonus?} → 스코어카드 |
-| GET/POST/DELETE | `/api/v1/user/tickets` | 저장 목록(target_draw_no 포함) |
+| POST | `/api/v1/user/tickets/evaluate` | {numbers[6], bonus?} → 스코어카드 (`bonus` 는 int\|null 로 고정, 보너스 상세는 `bonus_info` {in_main, observed_as_main}; v1.9.1) |
+| GET/POST/DELETE | `/api/v1/user/tickets` | 저장 목록(`?target_draw_no=` 필터 v1.11; target_draw_no, S5.6 `dup_count`·`dup_labels`·`same_number_ticket_ids`·`duplicate` 포함; POST 는 같은 번호·회차면 병합) |
+| GET | `/api/v1/user/tickets/draws` | (S5.7) 현재 대상 회차 컨텍스트 — next_draw, latest_result_draw, active_target_draw, reason(next_recommended \| next_registered \| awaiting_next_recommendation \| none), draws[{target_draw_no, count, evaluated}] |
 | GET | `/api/v1/tracking/summary` | 전략별 누적 성과(일치수 분포·기대 대비·CI) |
 | GET | `/api/v1/tracking/outcomes` | 티켓 단위 대조 결과(필터: strategy, draw_no, source, origin; limit ≤50000, offset) — 행마다 `past_wins` 포함 |
 | GET | `/api/v1/tracking/outcomes/summary` | 필터 건수·회차/전략 목록·출처별 건수 |
@@ -750,6 +759,16 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 
 | 버전 | 일자 | 내용 |
 | :-- | :-- | :-- |
+| 1.13 | 2026-09-14 | 사용자 요청: frontend/backend 를 **docker compose 로 구동**(S7.1) — Dockerfile 정비(lock 고정·.dockerignore·`/srv/lotto` 루트), api 엔트리포인트에서 `alembic upgrade head`(선택 시드) 후 uvicorn, web 은 Vite 프록시 → `api:8000`, `make docker-all/build/logs/stop/restart/ps/migrate/seed/reanalyze` |
+| 1.12.1 | 2026-09-14 | 사용자 보고: '추천 생성'·'추천 생성(순차)' 버튼이 두 줄로 표시 — 버튼 슬롯을 2열(`sm:col-span-2`, 폼 lg 7열)로 넓히고 줄바꿈 금지(`flex-nowrap`)로 한 줄 배치 |
+| 1.12 | 2026-09-14 | 사용자 요청: '추천 생성' 우측 **'추천 생성(순차)'** — 전략 선택의 모든 전략을 순서대로 같은 옵션으로 생성(전략별 batch, control 미포함, 실패 전략은 계속·보고) (S4.11, `POST /recommend/sequential`) |
+| 1.11.1 | 2026-09-14 | 사용자 보고 "회차간 상관분석 .env 변수 미적용": 값은 엔진에 적용되고 있었으나 `GET /api/v1/config` 와 설정 화면에 `lotto_cross_draw_lag` 가 노출되지 않아 확인 불가였음. `/config` 에 `lotto_cross_draw_lag`·`lotto_min_effect_delta`·`lotto_run_retention` 추가, 설정 화면 설명, 회차간 연관성 화면에 run 의 L 과 현재 설정 L 불일치 안내(재분석 필요) |
+| 1.11 | 2026-09-14 | 사용자 요청: 추첨 결과 등록 후 **다음 회차 추천을 저장하면** 내 번호 '저장된 번호' 목록이 다음 회차로 전환(이전 회차 번호는 숨김, 삭제 아님), 그 전에는 결과(낙첨 등)를 그대로 확인. 회차 필터(자동/특정/전체) 추가 (S5.7, `GET /user/tickets/draws`, `GET /user/tickets?target_draw_no=`) |
+| 1.10.1 | 2026-09-14 | 버그 수정(사용자 보고): 용어 툴팁(`Term`) 내용이 박스를 벗어남 — 표 헤더/셀의 `whitespace-nowrap` 이 툴팁에 상속되어 한 줄로 흘러 세로 크기도 늘지 않음. 툴팁에 `whitespace-normal break-words` 강제 + 폭 상한 `max-w-[calc(100vw-2rem)]`, 회귀 테스트 |
+| 1.10 | 2026-09-14 | 사용자 요청: (1) 회차 내 조합 상관에 더해 **회차간 교차 공출현** 분석(S2.13, §4.8) — 전회차 $i$→후회차 $j$ 45×45 방향 행렬, lag 1..$L$ 개별·창 합산, MC maxT, 결과 섹션 `cross_draw`, 화면 `/cross-draw`; (2) 간격 $L$ 을 `LOTTO_CROSS_DRAW_LAG`(기본 5) 로 관리; (3) 경계 회차(앞·뒤 $L$ 회)는 간격 내 가능한 쌍만 포함; (4) 기존 DB 백업 후 군 A(1~1,000)·B(1,001~1,241)·전체(1~1,241) 재분석(`make reanalyze`, §17.5) |
+| 1.9.2 | 2026-09-14 | 버그 수정(사용자 보고): `.env.local` 값이 적용되지 않음 — pydantic-settings `env_file` 은 뒤 파일 우선인데 example 이 뒤에 있었음. 순서 example → `.env` → `.env.local` 로 수정(OS 환경변수 최우선), 우선순위 회귀 테스트, 자동 등록 테스트는 풀 크기 monkeypatch |
+| 1.9.1 | 2026-09-14 | 버그 수정(사용자 보고): 보너스 포함 평가 시 백색 화면 — 스코어카드 `bonus` 가 dict 로 반환돼 프론트 BallRow 가 객체를 렌더. `bonus` int\|null + `bonus_info` 분리, ScorecardView 방어 렌더·보너스 정보 표시, 회귀 테스트 |
+| 1.9 | 2026-09-12 | 사용자 요청: 추천→내 번호(자동) 등록 시 같은 번호·회차는 병합하고 내 번호 목록에 ★ 중복 ×n 표시(S5.6, `user_ticket.dup_count/dup_labels`, 응답 `duplicate` 필드, 자동 등록 skip→merge, 용어 `duplicate_ticket` 정직 해석) |
 | 1.8 | 2026-09-09 | 사용자 요청: 내 번호 화면 '등록된 번호로 추첨 시도'(S5.5) — 1..N(저장 개수) 무작위 빈도 규칙으로 5개 선택, ★ 표시(UI 상태만, DB 저장 없음) |
 | 1.7 | 2026-09-09 | 사용자 요청: '내 번호로 자동 등록' 규칙 문구를 하단 힌트 → 버튼 툴팁으로, 추천 이력 행의 '내 번호로 등록'은 확인 팝업 없이 즉시 등록 (S4.7/S4.10 UX) |
 | 1.6 | 2026-09-09 | 사용자 요청: 추천 이력 '필터 초기화' 우측 '내 번호로 자동 등록' — 1..P 중 5개 무작위 추출을 대상 회차 수만큼 반복해 빈도 상위 5 위치 선택 → 전략별 최신 batch 티켓 등록 (S4.10, `POST /recommend/auto-register`) |
@@ -819,3 +838,18 @@ birthday_count(−0.081, p=.003)·consecutive_pairs(−0.058, p=.005)·sum(−0.
 | 2 | coordinate | 6 | +0.0250 | — | −0.0583 [−0.142, 0.022] | +0.0833 | 개선 소멸(평균 회귀) |
 
 선택된 파라미터 β≈1.04, λ≈0.57, window 516. 튠 구간에서 최고로 뽑힌 후보조차 H0 best-of-K 기대값(+0.046)에 못 미치고, 홀드아웃에서는 음수로 회귀 — **A 분석 기반 가중이 적중율을 지속적으로 높인다는 증거 없음**. 이것이 §4.12 가 예측한 결과이며, 플랫폼은 세대가 누적될수록 Spearman 추세 검정(n≥4)으로 같은 질문에 계속 답한다.
+
+### 17.5 재분석 (v1.10, 2026-09-14) — 1,241회 포함, 회차간 교차 공출현 추가 (`make reanalyze`, quick B=10,000, seed 20260908)
+
+기존 DB 는 `data/backup/lotto_20260914T002109Z.db` 로 백업했다. 군 A(1~1,000)·B(1,001~1,241)·전체(1~1,241) 세 run 모두 **모든 축에서 균등·독립 영가설과 일치**(경보 0).
+
+| 군 | T | Joe $J$ p | 순서통계 $Q$ p | Genest p | CUSUM p | overlap 평균 | 회차간 창(1..5) 최대 셀 | z | maxT p | BH 유의 셀 / FWER | 원시 p<.05 (기대 101) | 전 lag 최대 (maxT) |
+| :-- | --: | --: | --: | --: | --: | --: | :-- | --: | --: | :-- | --: | :-- |
+| A | 1,000 | 0.888 | 0.341 | 0.926 | 0.295 | 0.830 | 42→9 (관측 99, 조건부 기대 68.8) | 4.13 | 0.087 | 2 / 0 | 124 | lag 2 15→41 z 4.09 (0.519) |
+| B | 241 | 0.396 | 0.160 | 0.422 | 0.677 | 0.812 | 15→2 (28 / 15.1) | 3.75 | 0.396 | 0 / 0 | 98 | lag 4 6→5 z 4.06 (0.815) |
+| 전체 | 1,241 | 0.874 | 0.185 | 0.711 | 0.411 | 0.827 | 5→27 (148 / 111.2) | 4.03 | 0.125 | 0 / 0 | 123 | lag 2 26→22 z 4.29 (0.278) |
+
+- 재출현(대각 합, 창): A 4,046 vs 조건부 기대 4,007.8 (z 0.70) · B 931 vs 978.8 (z −1.77) · 전체 4,988 vs 4,971.8 (z 0.27) — 같은 번호가 1~5회 뒤 다시 나오는 경향 없음.
+- 군 A 의 BH 유의 셀 2개(42→9 등)는 A 의 990쌍 후보처럼 탐색 후보이며 FWER(maxT) 에서 소멸, 군 B·전체에서 재현되지 않는다(B 의 42→9: 창 관측 = 기대 수준). 2,025셀 × 5 lag 탐색에서 원시 p<.05 가 100개 안팎인 것은 정상.
+- 경계 처리 확인: 각 run 에서 앞 5회차·뒤 5회차(전체 run 은 1,237~1,241)가 부분 포함되었고 lag ℓ 쌍 수 = T−ℓ.
+- 통계량 설계 메모: 무조건 이항 z 로는 자주 나온 번호의 대각 셀이 크게 나와(시뮬 seed 1 에서 |z| 7.1) 오판 위험이 있어 주변빈도 조건부 2×2 독립성 z 를 채택했다(균등 시뮬 기각률 6.5%≈α, 신호 주입 1→6 은 z 24 로 검출).

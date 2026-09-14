@@ -132,6 +132,48 @@ def recommend(
     }
 
 
+def recommend_sequential(
+    session: Session,
+    *,
+    strategies: list[str] | None = None,
+    count: int | None = None,
+    seed: int | None = None,
+    max_shared: int | None = None,
+    save: bool = True,
+) -> dict:
+    """S4.11 — 카탈로그 순서로 모든 전략을 같은 옵션으로 생성. 전략별 batch, control 미포함, 실패는 계속·보고."""
+    order = list(strategies) if strategies else list(strat.STRATEGIES.keys())
+    results: list[dict] = []
+    failed: list[dict] = []
+    for s in order:
+        if s not in strat.STRATEGIES:
+            failed.append({"strategy": s, "error": "알 수 없는 전략"})
+            continue
+        try:
+            results.append(
+                recommend(
+                    session,
+                    strategy=s,
+                    count=count,
+                    seed=seed,
+                    max_shared=max_shared,
+                    include_control=False,
+                    save=save,
+                )
+            )
+        except ValueError as e:
+            session.rollback()
+            failed.append({"strategy": s, "error": str(e)})
+    return {
+        "sequence_id": str(uuid.uuid4()),
+        "target_draw_no": results[0]["target_draw_no"] if results else None,
+        "strategies": order,
+        "results": results,
+        "failed": failed,
+        "total_tickets": sum(len(st["tickets"]) for r in results for st in r["sets"]),
+    }
+
+
 def _analysis_basis(ctx: strat.Context) -> dict:
     """추천이 근거한 분석 요약 (PRD S4.8): 군 A run, 이력 T, 상위 |z| 번호, 상위 Lift* 쌍."""
     z = ctx.z_scores()
@@ -194,12 +236,36 @@ def save_user_ticket(
         draw_no_next=ctx.draw_no_next,
         bonus=bonus,
     )
+    nums = sorted(numbers)
+    target = target_draw_no or ctx.draw_no_next
+    # S5.5 중복 등록: 같은 번호·같은 대상 회차 → 기존 행에 병합 (dup_count↑, 라벨 누적)
+    existing = next(
+        (
+            t
+            for t in session.scalars(select(UserTicket).where(UserTicket.target_draw_no == target)).all()
+            if list(t.numbers) == nums
+        ),
+        None,
+    )
+    if existing is not None:
+        existing.dup_count = int(existing.dup_count or 1) + 1
+        labels = list(existing.dup_labels or [])
+        if label and label not in labels:
+            labels.append(label)
+        existing.dup_labels = labels
+        if bonus is not None and existing.bonus is None:
+            existing.bonus = bonus
+        if commit:
+            session.commit()
+        return existing
     ut = UserTicket(
-        numbers=sorted(numbers),
+        numbers=nums,
         bonus=bonus,
         label=label,
-        target_draw_no=target_draw_no or ctx.draw_no_next,
+        target_draw_no=target,
         scorecard=_compact(card),
+        dup_count=1,
+        dup_labels=[label] if label else [],
     )
     session.add(ut)
     if commit:
@@ -213,7 +279,7 @@ def auto_register(
     session: Session, *, target_draw_no: int | None = None, seed: int | None = None, pick: int = 5
 ) -> dict:
     """S4.10 — 1..P 중 pick 개 무작위 추출을 대상 회차 수만큼 반복 → 빈도 상위 pick 위치 →
-    전략별 최신 batch 티켓을 내 번호로 등록. 동일 번호·대상 회차가 이미 있으면 건너뜀."""
+    전략별 최신 batch 티켓을 내 번호로 등록. 동일 번호·대상 회차가 이미 있으면 병합(S5.6, dup_count↑)."""
     ctx = build_context(session)
     target = target_draw_no or ctx.draw_no_next
     pool = settings.lotto_number_recommendation_count
@@ -233,35 +299,35 @@ def auto_register(
         .order_by(Recommendation.rec_id)
     ).all()
     existing = {
-        tuple(u.numbers)
-        for u in session.scalars(select(UserTicket).where(UserTicket.target_draw_no == target)).all()
+        tuple(u.numbers) for u in session.scalars(select(UserTicket).where(UserTicket.target_draw_no == target)).all()
     }
+    seen_now: set[tuple[int, ...]] = set()
     by_strategy: dict[str, dict[str, list[Recommendation]]] = {}
     for r in recs:
         by_strategy.setdefault(r.strategy, {}).setdefault(r.batch_id, []).append(r)
 
     out_strats = []
-    total_registered = total_skipped = 0
+    total_registered = total_merged = 0
     for s_id, batches in by_strategy.items():
         latest = max(batches.values(), key=lambda rows: rows[-1].rec_id)
         label = strat.STRATEGIES.get(s_id, {}).get("label", s_id)
-        registered, skipped, missing = [], [], []
+        registered, merged, missing = [], [], []
         for pos in selected:
             if pos > len(latest):
                 missing.append(pos)
                 continue
             r = latest[pos - 1]
             key = tuple(sorted(r.ticket))
-            if key in existing:
-                skipped.append({"position": pos, "rec_id": r.rec_id, "ticket": r.ticket})
-                continue
-            ut = save_user_ticket(
-                session, r.ticket, None, f"추천 {label} #{r.rec_id}", target, ctx=ctx, commit=False
-            )
-            existing.add(key)
-            registered.append({"position": pos, "rec_id": r.rec_id, "ticket": r.ticket, "ticket_id": ut.ticket_id})
+            ut = save_user_ticket(session, r.ticket, None, f"추천 {label} #{r.rec_id}", target, ctx=ctx, commit=False)
+            session.flush()
+            item = {"position": pos, "rec_id": r.rec_id, "ticket": r.ticket, "ticket_id": ut.ticket_id}
+            if key in existing or key in seen_now:
+                merged.append({**item, "dup_count": int(ut.dup_count)})
+            else:
+                registered.append(item)
+            seen_now.add(key)
         total_registered += len(registered)
-        total_skipped += len(skipped)
+        total_merged += len(merged)
         out_strats.append(
             {
                 "strategy": s_id,
@@ -269,7 +335,7 @@ def auto_register(
                 "batch_id": latest[0].batch_id,
                 "n_tickets": len(latest),
                 "registered": registered,
-                "skipped_existing": skipped,
+                "merged_duplicates": merged,
                 "missing_positions": missing,
             }
         )
@@ -284,7 +350,7 @@ def auto_register(
         "selected": selected,
         "strategies": out_strats,
         "total_registered": total_registered,
-        "total_skipped": total_skipped,
+        "total_merged": total_merged,
         "policy": "위치 선택은 오락용 규칙이며 어떤 티켓도 당첨확률은 동일하다.",
     }
 
@@ -389,6 +455,7 @@ def strategy_catalog() -> list[dict]:
 
 __all__ = [
     "recommend",
+    "recommend_sequential",
     "evaluate_user_ticket",
     "save_user_ticket",
     "list_recommendations",

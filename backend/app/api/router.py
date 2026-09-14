@@ -33,5 +33,8 @@ def get_config() -> dict[str, object]:
         },
         "lotto_random_seed": settings.lotto_random_seed,
         "lotto_auto_rerun_preset": settings.lotto_auto_rerun_preset,
+        "lotto_cross_draw_lag": settings.lotto_cross_draw_lag,
+        "lotto_min_effect_delta": settings.lotto_min_effect_delta,
+        "lotto_run_retention": settings.lotto_run_retention,
         "timezone": settings.lotto_timezone,
     }

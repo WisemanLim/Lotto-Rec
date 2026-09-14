@@ -7,6 +7,7 @@ export const NAV = [
   { to: '/pairs', label: '조합 연관성' },
   { to: '/groups', label: '그룹 패턴' },
   { to: '/temporal', label: '시간 분석' },
+  { to: '/cross-draw', label: '회차간 연관성' },
   { to: '/validation', label: '검증 (A→B)' },
   { to: '/recommend', label: '추천' },
   { to: '/my-numbers', label: '내 번호' },

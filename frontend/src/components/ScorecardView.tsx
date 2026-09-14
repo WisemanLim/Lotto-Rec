@@ -63,8 +63,13 @@ export default function ScorecardView({ sc, alpha = 0.05 }: { sc: Scorecard; alp
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <BallRow numbers={sc.numbers} bonus={sc.bonus} />
+        <BallRow numbers={sc.numbers} bonus={typeof sc.bonus === 'number' ? sc.bonus : null} />
         <span className="text-xs text-neutral-500">이력 T={sc.history_T}회</span>
+        {sc.bonus_info && (
+          <span className="text-xs text-neutral-500">
+            보너스 {sc.bonus} · 본번호로 출현 {sc.bonus_info.observed_as_main ?? '—'}회 (보너스는 스코어카드 지표에 포함되지 않음)
+          </span>
+        )}
       </div>
       <ScorecardCompact sc={sc} />
 

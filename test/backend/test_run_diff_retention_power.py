@@ -10,11 +10,15 @@ from app.core.null_model import GAME, simulate_biased_draws, simulate_draws
 
 
 def test_diff_vs_previous_and_settings_field(seeded: None, client) -> None:  # noqa: ANN001
-    a = client.post("/api/v1/analysis/runs", json={"cohort": "A", "mc_iterations": 120, "seed": 21, "sync": True}).json()
+    a = client.post(
+        "/api/v1/analysis/runs", json={"cohort": "A", "mc_iterations": 120, "seed": 21, "sync": True}
+    ).json()
     d0 = client.get(f"/api/v1/analysis/runs/{a['run_id']}/diff_vs_previous").json()
     # 첫 run 이거나 이전 run 존재 — 어느 쪽이든 summary 존재
     assert "summary" in d0
-    b = client.post("/api/v1/analysis/runs", json={"cohort": "A", "mc_iterations": 120, "seed": 22, "sync": True}).json()
+    b = client.post(
+        "/api/v1/analysis/runs", json={"cohort": "A", "mc_iterations": 120, "seed": 22, "sync": True}
+    ).json()
     d = client.get(f"/api/v1/analysis/runs/{b['run_id']}/diff_vs_previous").json()
     assert d["previous_run_id"] is not None
     assert "global_p_joe" in d and d["global_p_joe"]["current"] is not None
@@ -32,7 +36,9 @@ def test_prune_runs_respects_retention_and_protection(seeded: None, client, monk
 
     ids = []
     for i in range(3):
-        r = client.post("/api/v1/analysis/runs", json={"cohort": "A", "mc_iterations": 100, "seed": 30 + i, "sync": True})
+        r = client.post(
+            "/api/v1/analysis/runs", json={"cohort": "A", "mc_iterations": 100, "seed": 30 + i, "sync": True}
+        )
         assert r.status_code == 200, r.text
         ids.append(r.json()["run_id"])
     monkeypatch.setattr(settings, "lotto_run_retention", 2)
@@ -91,7 +97,12 @@ def test_power_under_injected_bias() -> None:
         c0 = incidence_from_draws(simulate_draws(rng, 1, T, GAME)[0], 45).sum(axis=0)
         pv0 = np.array([stats.binomtest(int(c), T, p1).pvalue for c in c0])
         rej_null_single += int(multipletests(pv0, alpha=alpha, method="holm")[0].any())
-    report = {"raw_single": rej_raw / n, "holm_single": rej_single / n, "joe_J": rej_J / n, "null_fwer": rej_null_single / n}
+    report = {
+        "raw_single": rej_raw / n,
+        "holm_single": rej_single / n,
+        "joe_J": rej_J / n,
+        "null_fwer": rej_null_single / n,
+    }
     print("power report (1.3x inclusion, T=1000):", report)
     assert report["raw_single"] >= 0.85, report
     assert report["holm_single"] >= 0.45, report

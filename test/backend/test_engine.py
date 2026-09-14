@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from app.core import frequency, groups, itemsets, order_stats, pairs, temporal
+from app.core import groups, itemsets, order_stats, pairs, temporal
 from app.core.multiple_testing import adjust_all, maxt_pvalues
 from app.core.null_model import GAME, iter_null_chunks, mc_pvalue, simulate_draws
 
@@ -79,7 +79,9 @@ def test_pair_analysis_shapes_and_null_lift() -> None:
     from app.core.features import incidence_from_draws
 
     x = incidence_from_draws(d, 45)
-    res = pairs.pair_analysis(x, GAME, 0.05, 0.25, null_max_z=np.array([3.5, 4.0, 4.5]), null_genest=np.array([900.0, 1000.0]))
+    res = pairs.pair_analysis(
+        x, GAME, 0.05, 0.25, null_max_z=np.array([3.5, 4.0, 4.5]), null_genest=np.array([900.0, 1000.0])
+    )
     assert len(res["rows"]) == 990 and res["summary"]["expected"] == pytest.approx(1000 / 66)
     lifts = np.array([r["calibrated_lift"] for r in res["rows"]])
     assert abs(lifts.mean() - 1) < 0.05  # 설계 보정 lift 평균 ≈ 1
@@ -131,7 +133,9 @@ def test_temporal_overlap_and_runs() -> None:
 
 
 def test_analysis_run_pipeline_sync(seeded: None, client) -> None:  # noqa: ANN001
-    res = client.post("/api/v1/analysis/runs", json={"cohort": "A", "preset": "quick", "mc_iterations": 200, "sync": True})
+    res = client.post(
+        "/api/v1/analysis/runs", json={"cohort": "A", "preset": "quick", "mc_iterations": 200, "sync": True}
+    )
     assert res.status_code == 200, res.text
     run = res.json()
     assert run["status"] == "done", run
@@ -160,8 +164,12 @@ def test_analysis_run_pipeline_sync(seeded: None, client) -> None:  # noqa: ANN0
 
 
 def test_reproducibility_same_seed(seeded: None, client) -> None:  # noqa: ANN001
-    a = client.post("/api/v1/analysis/runs", json={"cohort": "A", "mc_iterations": 150, "seed": 77, "sync": True}).json()
-    b = client.post("/api/v1/analysis/runs", json={"cohort": "A", "mc_iterations": 150, "seed": 77, "sync": True}).json()
+    a = client.post(
+        "/api/v1/analysis/runs", json={"cohort": "A", "mc_iterations": 150, "seed": 77, "sync": True}
+    ).json()
+    b = client.post(
+        "/api/v1/analysis/runs", json={"cohort": "A", "mc_iterations": 150, "seed": 77, "sync": True}
+    ).json()
     ga = client.get(f"/api/v1/analysis/runs/{a['run_id']}/global").json()
     gb = client.get(f"/api/v1/analysis/runs/{b['run_id']}/global").json()
     assert ga == gb

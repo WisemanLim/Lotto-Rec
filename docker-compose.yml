@@ -1,5 +1,7 @@
 # Lotto-Rec — custom (python-fastapi + react). local 전용 프로젝트: SQLite 사용, infra 서비스 없음.
-# app 서비스는 profiles:[app] — `make <env>-all` 에서만 포함. 표준 호환용 스텁.
+# app 서비스는 profiles:[app] — `make docker-all`(현재 환경, S7.1) / `make <env>-all` 에서 포함.
+# 설정은 .env.<ENV>(기본 .env.local) 를 env_file 로 주입, 포트 매핑도 같은 파일의 LOTTO_*_PORT 를 사용(make 가 --env-file 로 전달).
+# 컨테이너 안 프로젝트 루트 = /srv/lotto (backend PROJECT_ROOT 규칙 유지) — ./data(SQLite·cache·backup)·./.docs(원천 xlsx) 볼륨 공유.
 services:
 
   # ── 인프라 (본 프로젝트 미사용 — 필요 시 주석 해제, LOCAL_INFRA=postgres|redis) ──
@@ -21,14 +23,30 @@ services:
     profiles: ["app"]
     build: { context: ./backend, dockerfile: Dockerfile }
     env_file: [".env.${ENV:-local}"]
+    environment:
+      LOTTO_BACKEND_HOST: 0.0.0.0          # 컨테이너 안에서는 모든 인터페이스에 바인딩(호스트 노출은 ports 로 제한)
+      LOTTO_DOCKER_SEED: ${LOTTO_DOCKER_SEED:-0}   # 1 이면 시작 시 원천 xlsx 전체 적재(멱등)
+    # 엔트리포인트: alembic upgrade head → (LOTTO_DOCKER_SEED=1 시드) → uvicorn
     ports: ["${BIND_HOST:-127.0.0.1}:${LOTTO_BACKEND_PORT:-8000}:8000"]
-    volumes: ["./data:/app/data", "./.docs:/app/.docs:ro"]
+    volumes:
+      - ./data:/srv/lotto/data
+      - ./.docs:/srv/lotto/.docs:ro
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).status == 200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
 
   web:
     profiles: ["app"]
     build: { context: ./frontend, dockerfile: Dockerfile }
+    environment:
+      VITE_API_BASE: http://api:8000       # Vite dev 프록시 대상(브라우저는 같은 origin 의 /api 로 호출)
+      VITE_TIMEZONE: ${VITE_TIMEZONE:-Asia/Seoul}
     ports: ["${BIND_HOST:-127.0.0.1}:${LOTTO_FRONTEND_PORT:-5173}:5173"]
-    depends_on: [api]
+    depends_on:
+      api: { condition: service_healthy }
 
 # volumes:
 #   pgdata:

@@ -6,7 +6,8 @@
 .PHONY: help preflight test lint deploy \
         local-all local-build local-logs local-stop local-restart local-ps \
         $(foreach e,dev staging prod,$(e)-all $(e)-build $(e)-logs $(e)-stop $(e)-restart $(e)-ps) \
-        db-migrate db-seed db-reset db-fresh
+        db-migrate db-seed db-reset db-fresh reanalyze \
+        docker-all docker-build docker-logs docker-stop docker-restart docker-ps docker-migrate docker-seed docker-reanalyze
 ENV  ?= local
 ENVS := dev staging prod
 DC   = docker compose $(if $(wildcard .env.$(ENV)),--env-file .env.$(ENV),) --profile app
@@ -104,6 +105,36 @@ else
 	@$(HONCHO) check
 endif
 
+## --- docker (현재 환경, S7.1): backend(api)+frontend(web) 컨테이너 — .env.local 주입, ./data·./.docs 볼륨 공유, api 시작 시 alembic 자동 ---
+DCL = docker compose --env-file .env.local --profile app
+define DOCKER_PORT_CHECK
+	@[ -f .env.local ] || (echo ".env.local 없음 — make local-build 또는 cp .env.local.example .env.local" && exit 1)
+	@if [ -f $(HONCHO_PIDFILE) ] && kill -0 $$(cat $(HONCHO_PIDFILE)) 2>/dev/null && [ -z "$$LOTTO_BACKEND_PORT$$LOTTO_FRONTEND_PORT" ]; then \
+	  echo "honcho 가 실행 중(pid $$(cat $(HONCHO_PIDFILE))) — 같은 포트를 씁니다. make local-stop 후 실행하거나 LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all"; exit 1; fi
+endef
+docker-build:    ## [docker] api/web 이미지 빌드 (uv.lock·pnpm-lock 고정)
+	@[ -f .env.local ] || (echo ".env.local 없음 — make local-build 또는 cp .env.local.example .env.local" && exit 1)
+	$(DCL) build
+docker-all:      ## [docker] 빌드 + 기동(백그라운드). api 는 alembic upgrade head 후 uvicorn. LOTTO_DOCKER_SEED=1 이면 xlsx 전체 적재
+	$(DOCKER_PORT_CHECK)
+	$(DCL) up -d --build
+	@echo "api → http://127.0.0.1:$${LOTTO_BACKEND_PORT:-$$(grep -E '^LOTTO_BACKEND_PORT=' .env.local | cut -d= -f2 | tr -d ' ')}/docs"
+	@echo "web → http://127.0.0.1:$${LOTTO_FRONTEND_PORT:-$$(grep -E '^LOTTO_FRONTEND_PORT=' .env.local | cut -d= -f2 | tr -d ' ')}"
+docker-logs:     ## [docker] 로그 추적 (SVC=api|web)
+	$(DCL) logs -f $(SVC)
+docker-stop:     ## [docker] 컨테이너 정리 (데이터 볼륨은 호스트 ./data 라 유지)
+	$(DCL) down --remove-orphans
+docker-restart:  ## [docker] 재기동 (SVC=api|web)
+	$(DCL) restart $(SVC)
+docker-ps:       ## [docker] 상태
+	$(DCL) ps
+docker-migrate:  ## [docker] 마이그레이션만 실행 (alembic upgrade head)
+	$(DCL) run --rm --no-deps --entrypoint "" api uv run --no-sync alembic upgrade head
+docker-seed:     ## [docker] 원천 xlsx 전체 회차 적재 (멱등)
+	$(DCL) run --rm --no-deps --entrypoint "" api uv run --no-sync python -m app.seed --all
+docker-reanalyze: ## [docker] DB 백업 후 군 A·B·ALL 재분석 (PRESET, COHORTS)
+	$(DCL) run --rm --no-deps --entrypoint "" api uv run --no-sync python -m app.reanalyze --preset $(PRESET) --cohorts $(COHORTS)
+
 ## --- dev/staging/prod: Docker 전체 스택 (표준 호환용, 본 프로젝트 미사용) ---
 $(ENVS:%=%-all):     %-all:      # [<env>] infra + app 컨테이너 기동
 	$(DCE) up -d
@@ -137,3 +168,7 @@ endif
 	$(MAKE) db-migrate ENV=$(ENV)
 db-fresh: db-reset  ## db-reset + 시드 적재
 	$(MAKE) db-seed ENV=$(ENV)
+PRESET  ?= quick
+COHORTS ?= A,B,ALL
+reanalyze:   ## DB 백업(data/backup/) 후 군 A·B·ALL 재분석 (PRESET=quick|report|deep, COHORTS=A,B,ALL; 설정은 pydantic 이 .env.local 직접 로드)
+	$(UV) run python -m app.reanalyze --preset $(PRESET) --cohorts $(COHORTS)

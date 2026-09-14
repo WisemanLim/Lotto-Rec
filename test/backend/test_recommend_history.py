@@ -47,8 +47,18 @@ def test_history_filters_offset_and_summary(seeded: None, client) -> None:  # no
 
 def test_history_origin_filter(seeded: None, client) -> None:  # noqa: ANN001
     """origin=user(기본) | backtest | all — replay 티켓도 조회 가능."""
-    client.post("/api/v1/validation/runs", json={"strategies": ["uniform"], "tickets_per_draw": 2, "from_draw": 1001,
-                                                 "to_draw": 1004, "seed": 3, "insert_draws": False, "sync": True})
+    client.post(
+        "/api/v1/validation/runs",
+        json={
+            "strategies": ["uniform"],
+            "tickets_per_draw": 2,
+            "from_draw": 1001,
+            "to_draw": 1004,
+            "seed": 3,
+            "insert_draws": False,
+            "sync": True,
+        },
+    )
     client.post("/api/v1/recommend", json={"strategy": "uniform", "count": 2, "seed": 1, "include_control": False})
     su = client.get("/api/v1/recommend/history/summary").json()
     sb = client.get("/api/v1/recommend/history/summary?origin=backtest").json()

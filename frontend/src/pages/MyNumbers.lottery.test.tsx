@@ -19,6 +19,7 @@ const posts: string[] = [];
 function fakeFetch(url: string, init?: RequestInit) {
   if (init?.method && init.method !== 'GET') posts.push(`${init.method} ${url}`);
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  if (url.includes('/user/tickets/draws')) return json({ next_draw: 1241, latest_result_draw: 1240, active_target_draw: 1241, reason: 'next_registered', draws: [{ target_draw_no: 1241, count: tickets.length, evaluated: false }] }); // S5.7
   if (url.includes('/user/tickets')) return json(tickets);
   if (url.includes('/data/summary')) return json({ max_draw: 1240 });
   if (url.includes('/analysis/runs/latest')) return new Response('{"detail":"none"}', { status: 404 });

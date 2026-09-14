@@ -124,6 +124,14 @@ export default function Overview() {
               sub={<><Term id="overlap">overlap</Term> 평균 {fmtNum(summary.data.kpi.overlap_mean, 3)} (기대 0.8) · <Term id="cusum">CUSUM</Term> p {fmtP(summary.data.kpi.cusum_p_mc)}</>}
               tone={(summary.data.kpi.temporal_alerts?.length ?? 0) > 0 ? 'warn' : 'neutral'}
             />
+            {summary.data.kpi.cross_draw_lag != null && (
+              <KpiCard
+                label={<Term id="cross_draw" icon>회차간 교차 최대 셀 · maxT p</Term>}
+                value={fmtP(summary.data.kpi.cross_draw_p_maxT ?? null)}
+                sub={`${summary.data.kpi.cross_draw_max_cell?.[0]}→${summary.data.kpi.cross_draw_max_cell?.[1]} · z=${fmtNum(summary.data.kpi.cross_draw_max_z ?? null, 2)} · 간격 1..${summary.data.kpi.cross_draw_lag}`}
+                tone={(summary.data.kpi.cross_draw_alerts?.length ?? 0) > 0 ? 'warn' : 'neutral'}
+              />
+            )}
           </div>
         </>
       )}

@@ -30,7 +30,9 @@ def test_weighted_sampling_valid_and_reproducible() -> None:
     assert hits[-5:].mean() > hits[:5].mean() * 3
 
 
-@pytest.mark.parametrize("s", ["uniform", "frequency_hot", "frequency_cold", "bayesian_shrink", "pair_association", "pattern_typical"])
+@pytest.mark.parametrize(
+    "s", ["uniform", "frequency_hot", "frequency_cold", "bayesian_shrink", "pair_association", "pattern_typical"]
+)
 def test_each_strategy_generates(s: str) -> None:
     ctx = _ctx()
     if s == "pattern_typical":
@@ -87,6 +89,14 @@ def test_user_ticket_evaluate_save_and_tracking(seeded: None, client) -> None:  
     assert ev.status_code == 200 and ev.json()["typicality"]["features"]["consecutive_pairs"] == 5
     dup = client.post("/api/v1/user/tickets/evaluate", json={"numbers": [1, 2, 3, 4, 5, 6], "bonus": 6})
     assert dup.status_code == 400
+    # 보너스 포함 평가: bonus 는 숫자(프론트 BallRow 렌더), 상세는 bonus_info (백색 화면 회귀)
+    wb = client.post("/api/v1/user/tickets/evaluate", json={"numbers": [1, 2, 3, 4, 5, 6], "bonus": 7}).json()
+    assert wb["bonus"] == 7 and wb["bonus_info"] == {
+        "in_main": False,
+        "observed_as_main": wb["bonus_info"]["observed_as_main"],
+    }
+    assert isinstance(wb["bonus_info"]["observed_as_main"], int)
+    assert ev.json()["bonus"] is None and ev.json()["bonus_info"] is None
     # 저장 → 대상 회차 = 다음 회차; 그 회차를 입력하면 자동 대조
     summary = client.get("/api/v1/data/summary").json()
     target = summary["max_draw"] + 1
@@ -122,8 +132,15 @@ def test_rank_and_prize_rules() -> None:
 
 def test_validation_replay_small_range(seeded: None, client) -> None:  # noqa: ANN001
     """1001~1012 replay: 전략 3개 × 4장. 군 B 실데이터 사용, look-ahead 금지, 결과 요약·재현성·동질성."""
-    body = {"strategies": ["uniform", "frequency_hot", "low_competition"], "tickets_per_draw": 4,
-            "from_draw": 1001, "to_draw": 1012, "seed": 11, "insert_draws": False, "sync": True}
+    body = {
+        "strategies": ["uniform", "frequency_hot", "low_competition"],
+        "tickets_per_draw": 4,
+        "from_draw": 1001,
+        "to_draw": 1012,
+        "seed": 11,
+        "insert_draws": False,
+        "sync": True,
+    }
     res = client.post("/api/v1/validation/runs", json=body)
     assert res.status_code == 200, res.text
     v = res.json()
@@ -146,3 +163,28 @@ def test_validation_replay_small_range(seeded: None, client) -> None:  # noqa: A
     assert ts["strategies"]["uniform"]["n_tickets"] == 48
     latest = client.get("/api/v1/validation/runs/latest").json()
     assert latest["validation_id"] == vid
+
+
+def test_user_ticket_duplicate_merge_and_group(seeded: None, client) -> None:  # noqa: ANN001
+    """S5.5: 같은 번호·같은 회차 → 병합(dup_count), 다른 회차 → 새 행 + 동일 번호 그룹 참조."""
+    nums = [2, 11, 19, 27, 36, 44]
+    target = client.get("/api/v1/data/summary").json()["max_draw"] + 1
+    a = client.post(
+        "/api/v1/user/tickets", json={"numbers": nums, "label": "추천 hybrid #1", "target_draw_no": target}
+    ).json()
+    assert a["dup_count"] == 1 and a["duplicate"] is False and a["dup_labels"] == ["추천 hybrid #1"]
+    b = client.post(
+        "/api/v1/user/tickets", json={"numbers": nums[::-1], "label": "추천 uniform #2", "target_draw_no": target}
+    ).json()
+    assert b["ticket_id"] == a["ticket_id"] and b["dup_count"] == 2 and b["duplicate"] is True
+    assert b["dup_labels"] == ["추천 hybrid #1", "추천 uniform #2"]
+    c = client.post(
+        "/api/v1/user/tickets", json={"numbers": nums, "label": "later", "target_draw_no": target + 1}
+    ).json()
+    assert c["ticket_id"] != a["ticket_id"] and c["dup_count"] == 1
+    assert c["duplicate"] is True and a["ticket_id"] in c["same_number_ticket_ids"]
+    lst = client.get("/api/v1/user/tickets").json()
+    row_a = next(r for r in lst if r["ticket_id"] == a["ticket_id"])
+    assert row_a["dup_count"] == 2 and c["ticket_id"] in row_a["same_number_ticket_ids"] and row_a["duplicate"]
+    # 병합 시 티켓 수는 늘지 않음
+    assert sum(1 for r in lst if r["numbers"] == sorted(nums)) == 2

@@ -55,9 +55,9 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 }
 
 /** Field 와 같은 줄에 버튼·체크박스를 놓기 위한 슬롯(라벨 높이만큼 위 여백, 힌트 줄 예약). */
-export function FormSlot({ children, hint }: { children: ReactNode; hint?: string }) {
+export function FormSlot({ children, hint, className = '' }: { children: ReactNode; hint?: string; className?: string }) {
   return (
-    <div className="block text-sm">
+    <div className={`block text-sm ${className}`}>
       <span aria-hidden className="mb-1 block h-4" />
       <div className="flex min-h-[34px] items-center gap-3">{children}</div>
       <span className="mt-0.5 block min-h-[14px] text-[11px] leading-[14px] text-neutral-500">{hint ?? '\u00a0'}</span>

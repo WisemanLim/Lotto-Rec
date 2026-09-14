@@ -96,18 +96,17 @@ def scorecard(
             "percentile_among_uniform": float((ref_pred < pred).mean()),
             "note": "예상 공유자 ↓ = 당첨 시 기대 분배금 ↑ (당첨확률은 불변)",
         }
+    # 보너스: `bonus` 는 항상 int|None (프론트 BallRow 가 숫자로 렌더), 상세는 bonus_info 로 분리
     bonus_info = None
     if bonus is not None:
-        bc = int(incidence.shape[0] and 0)
         bonus_info = {
-            "bonus": bonus,
             "in_main": bonus in nums,
             "observed_as_main": int(counts[bonus - 1]) if 1 <= bonus <= N else None,
-            "_": bc,
         }
     return {
         "numbers": nums,
-        "bonus": bonus_info,
+        "bonus": bonus,
+        "bonus_info": bonus_info,
         "history_T": int(T),
         "per_number": per_number,
         "pairs": pair_rows,

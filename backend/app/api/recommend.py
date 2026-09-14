@@ -42,6 +42,27 @@ def recommend(body: RecommendIn, session: Session = Depends(get_session)) -> dic
         raise HTTPException(400, str(e)) from e
 
 
+class SequentialIn(BaseModel):
+    strategies: list[str] | None = Field(None, description="미지정 시 카탈로그 전체(순서대로)")
+    count: int | None = Field(None, ge=1, le=50)
+    seed: int | None = None
+    max_shared: int | None = Field(None, ge=0, le=6)
+    save: bool = True
+
+
+@router.post("/sequential")
+def recommend_sequential(body: SequentialIn, session: Session = Depends(get_session)) -> dict:
+    """S4.11 — 전략 선택의 모든 전략을 순서대로 같은 옵션으로 생성 (전략별 batch, control 미포함)."""
+    return rsvc.recommend_sequential(
+        session,
+        strategies=body.strategies,
+        count=body.count,
+        seed=body.seed,
+        max_shared=body.max_shared,
+        save=body.save,
+    )
+
+
 class AutoRegisterIn(BaseModel):
     target_draw_no: int | None = Field(None, ge=1, description="미지정 시 최신 회차 + 1")
     seed: int | None = Field(None, ge=0, description="미지정 시 무작위(응답에 사용 seed 포함)")

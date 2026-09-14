@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type TicketIn, type UserTicket } from '../api/client';
+import { api, type TicketDraws, type TicketIn, type UserTicket } from '../api/client';
 import { useRun } from '../hooks/useRun';
 import LottoBall, { BallRow } from '../components/LottoBall';
 import PolicyBanner from '../components/PolicyBanner';
@@ -21,7 +21,16 @@ export default function MyNumbers() {
   const [label, setLabel] = useState('');
   const [target, setTarget] = useState('');
   const summary = useQuery({ queryKey: ['data', 'summary'], queryFn: api.data.summary });
-  const tickets = useQuery({ queryKey: ['user', 'tickets'], queryFn: () => api.user.tickets(200) });
+  // S5.7 현재 대상 회차: null = 자동(서버 active_target_draw), 'all' = 전체, number = 특정 회차
+  const [drawSel, setDrawSel] = useState<number | 'all' | null>(null);
+  const draws = useQuery({ queryKey: ['user', 'ticket-draws'], queryFn: api.user.ticketDraws });
+  const ctx: TicketDraws | undefined = draws.data;
+  const effectiveDraw: number | 'all' | null = drawSel ?? ctx?.active_target_draw ?? null;
+  const tickets = useQuery({
+    queryKey: ['user', 'tickets', effectiveDraw],
+    queryFn: () => api.user.tickets(200, effectiveDraw === 'all' ? null : effectiveDraw),
+    enabled: effectiveDraw !== null,
+  });
   const evaluate = useMutation({ mutationFn: (b: TicketIn) => api.user.evaluate(b) });
   const save = useMutation({
     mutationFn: (b: TicketIn) => api.user.save(b),
@@ -126,8 +135,28 @@ export default function MyNumbers() {
       )}
 
       <Section
-        title="저장된 번호"
+        title={
+          <Term id="active_target_draw" icon>
+            {effectiveDraw === 'all' ? '저장된 번호 (전체 회차)' : effectiveDraw ? `저장된 번호 (대상 ${effectiveDraw}회)` : '저장된 번호'}
+          </Term>
+        }
         right={
+          <div className="flex flex-wrap items-center gap-2">
+            {ctx && (
+              <label className="text-xs">
+                대상 회차{' '}
+                <select aria-label="대상 회차 필터" className={`${inputCls} inline w-auto`} value={drawSel === null ? 'auto' : String(drawSel)} onChange={(e) => setDrawSel(e.target.value === 'auto' ? null : e.target.value === 'all' ? 'all' : Number(e.target.value))}>
+                  <option value="auto">자동 · 현재 대상 {ctx.active_target_draw}회</option>
+                  {!ctx.draws.some((d) => d.target_draw_no === ctx.next_draw) && <option value={ctx.next_draw}>{ctx.next_draw}회 (다음 회차 · 0장)</option>}
+                  {ctx.draws.map((d) => (
+                    <option key={d.target_draw_no} value={d.target_draw_no}>
+                      {d.target_draw_no}회 · {d.count}장{d.evaluated ? ' · 결과 확정' : ''}
+                    </option>
+                  ))}
+                  <option value="all">전체 회차</option>
+                </select>
+              </label>
+            )}
           <button
             type="button"
             className={`${btnCls} bg-emerald-700 hover:bg-emerald-800`}
@@ -137,8 +166,18 @@ export default function MyNumbers() {
           >
             등록된 번호로 추첨 시도
           </button>
+          </div>
         }
       >
+        {ctx && drawSel === null && (
+          <p className="mb-2 text-xs text-neutral-500" role="status" aria-label="현재 대상 회차 안내">
+            {ctx.reason === 'awaiting_next_recommendation' && ctx.active_target_draw <= ctx.latest_result_draw
+              ? `${ctx.active_target_draw}회 결과가 등록되어 저장된 번호의 결과를 확인할 수 있습니다. 추천에서 다음 회차(${ctx.next_draw}회) 추천을 저장하면 목록이 ${ctx.next_draw}회로 전환됩니다.`
+              : ctx.reason === 'next_recommended' || ctx.reason === 'next_registered'
+                ? `다음 회차(${ctx.next_draw}회) ${ctx.reason === 'next_recommended' ? '추천이 저장되어' : '번호가 등록되어'} ${ctx.next_draw}회 대상 번호만 표시합니다. 이전 회차 번호는 삭제되지 않았으며 회차 필터에서 볼 수 있습니다.`
+                : `다음 회차(${ctx.next_draw}회) 대상 번호를 표시합니다.`}
+          </p>
+        )}
         {lottery && (
           <p className="mb-2 text-xs text-emerald-800 dark:text-emerald-200" role="status" aria-label="추첨 시도 결과">
             추첨 시도 — {lottery.pick.rounds.toLocaleString()}회 반복(1..{lottery.pick.pool} 중 {lottery.pick.pick}개) · 선택 위치{' '}
@@ -147,13 +186,31 @@ export default function MyNumbers() {
         )}
         {tickets.isLoading && <Loading />}
         {tickets.isError && <ErrorBox error={tickets.error} />}
-        {tickets.data && tickets.data.length === 0 && <Empty>저장된 번호 없음</Empty>}
+        {(draws.isLoading || (tickets.isLoading && !tickets.data)) && effectiveDraw === null && <Loading />}
+        {draws.isError && <ErrorBox error={draws.error} />}
+        {tickets.data && tickets.data.length === 0 && (
+          <Empty>
+            {effectiveDraw === 'all' ? '저장된 번호 없음' : `${effectiveDraw}회 대상 저장된 번호 없음${ctx && ctx.draws.length ? ' — 이전 회차 번호는 회차 필터에서 확인' : ''}`}
+          </Empty>
+        )}
         <div className="space-y-2">
           {tickets.data?.map((t: UserTicket) => (
             <div key={t.ticket_id} className="flex flex-wrap items-center gap-3 rounded-md border border-neutral-200 p-3 text-sm dark:border-neutral-700">
               <BallRow numbers={t.numbers} bonus={t.bonus} size="sm" />
+              {(t.duplicate || (t.dup_count ?? 1) > 1 || (t.same_number_ticket_ids?.length ?? 0) > 0) && (
+                <Term id="duplicate_ticket">
+                  <span
+                    className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-900/50 dark:text-amber-200"
+                    data-testid="dup-badge"
+                    title={`같은 번호 등록 ${t.dup_count ?? 1}회${t.same_number_ticket_ids?.length ? ` · 다른 회차 #${t.same_number_ticket_ids.join(', #')}` : ''}`}
+                  >
+                    ★ 중복 ×{(t.dup_count ?? 1) + (t.same_number_ticket_ids?.length ?? 0)}
+                  </span>
+                </Term>
+              )}
               <span className="text-xs text-neutral-500">
-                #{t.ticket_id} {t.label ? `· ${t.label}` : ''} · 대상 {t.target_draw_no ?? '미지정'}회 · {fmtDate(t.created_at)}
+                #{t.ticket_id} {t.label ? `· ${t.label}` : ''}
+                {(t.dup_labels?.length ?? 0) > 1 ? ` (+${t.dup_labels!.slice(1).join(', ')})` : ''} · 대상 {t.target_draw_no ?? '미지정'}회 · {fmtDate(t.created_at)}
               </span>
               {t.scorecard && (
                 <span className="text-xs text-neutral-600 dark:text-neutral-300">

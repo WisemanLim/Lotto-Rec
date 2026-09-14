@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type BacktestResult, type RecommendIn, type RecommendResponse, type RecommendTicket } from '../api/client';
+import { api, type BacktestResult, type RecommendIn, type RecommendResponse, type RecommendTicket, type SequentialIn } from '../api/client';
 import { useRun } from '../hooks/useRun';
 import { BallRow } from '../components/LottoBall';
 import PolicyBanner from '../components/PolicyBanner';
@@ -86,7 +86,15 @@ export function RegisterMyNumber({
   if (m.isSuccess)
     return (
       <span className={`inline-flex items-center gap-1 ${cls} text-emerald-700 dark:text-emerald-300`}>
-        내 번호 #{m.data.ticket_id} 등록됨 ·{' '}
+        {m.data.duplicate ? (
+          <>
+            <span className="text-amber-700 dark:text-amber-300">★ 중복</span> — 내 번호 #{m.data.ticket_id}
+            {(m.data.dup_count ?? 1) > 1 ? ` 에 병합(×${m.data.dup_count})` : ' (다른 회차에 동일 번호 있음)'}
+          </>
+        ) : (
+          <>내 번호 #{m.data.ticket_id} 등록됨</>
+        )}{' '}
+        ·{' '}
         <Link to="/my-numbers" className="underline">
           보기
         </Link>
@@ -116,7 +124,7 @@ function AutoRegisterSummary({ r }: { r: AutoRegisterResult }) {
     <div className="mb-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs dark:border-emerald-800 dark:bg-emerald-950/40" role="status" aria-label="자동 등록 결과">
       <div className="mb-1 font-medium text-emerald-800 dark:text-emerald-200">
         내 번호로 자동 등록 — 대상 {r.target_draw_no}회 · {r.rounds.toLocaleString()}회 반복(1..{r.pool} 중 {r.pick}개) · seed {r.seed} · 선택 위치{' '}
-        <span className="font-semibold tabular-nums">{r.selected.join(', ')}</span> · 등록 {r.total_registered}장 / 중복 건너뜀 {r.total_skipped}장 ·{' '}
+        <span className="font-semibold tabular-nums">{r.selected.join(', ')}</span> · 등록 {r.total_registered}장 / ★ 중복 병합 {r.total_merged}장 ·{' '}
         <Link to="/my-numbers" className="underline">
           내 번호 보기
         </Link>
@@ -125,7 +133,7 @@ function AutoRegisterSummary({ r }: { r: AutoRegisterResult }) {
         {r.strategies.map((s) => (
           <li key={s.strategy} className="text-neutral-700 dark:text-neutral-300">
             <span className="font-medium">{s.label}</span> ({s.batch_id.slice(0, 8)} · {s.n_tickets}장): 등록 {s.registered.length}
-            {s.skipped_existing.length > 0 && ` · 중복 ${s.skipped_existing.length}`}
+            {s.merged_duplicates.length > 0 && ` · ★ 중복 병합 ${s.merged_duplicates.length}`}
             {s.missing_positions.length > 0 && ` · 없는 위치 ${s.missing_positions.join(',')}`}
             {s.registered.length > 0 && (
               <span className="ml-1 text-neutral-500">{s.registered.map((t) => `#${t.position}[${t.ticket.join(' ')}]`).join(' ')}</span>
@@ -162,6 +170,78 @@ function TicketCard({ t, alpha, strategy, targetDrawNo }: { t: RecommendTicket; 
         )}
       </div>
     </div>
+  );
+}
+
+function RecommendResultSection({ res, alpha, titlePrefix = '추천 결과' }: { res: RecommendResponse; alpha: number; titlePrefix?: string }) {
+  return (
+    <Section
+      title={`${titlePrefix} — 대상 ${res.target_draw_no}회`}
+      right={
+        <span className="text-xs text-neutral-500">
+          batch {res.batch_id.slice(0, 8)} · seed {res.seed} · 이력 T={res.history_T} · run {res.run_id?.slice(0, 8) ?? '—'}
+        </span>
+      }
+    >
+      <div className="space-y-5">
+        {res.sets.map((set) => (
+          <div key={set.strategy}>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold">{set.label}</h3>
+              {set.is_control && <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[11px] dark:bg-neutral-700">control</span>}
+              <span className="text-xs text-neutral-500">
+                {set.basis} · 기대: {set.expectation} · {set.tickets.length}장
+              </span>
+            </div>
+            <div className="mb-2 flex flex-wrap items-center gap-2 text-xs" data-testid="set-basis">
+              <span className="rounded bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800">
+                <Term id="strategy_params">파라미터</Term>: {fmtParams(set.params_used)}
+              </span>
+              {set.experiment ? (
+                <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-800 dark:bg-blue-950 dark:text-blue-200">
+                  활성 실험 v{set.experiment.iteration} · <Term id="holdout">홀드아웃</Term> 균등 대비 {fmtSigned(set.experiment.holdout?.mean ?? null, 4)} · {set.experiment.verdict ?? ''}
+                </span>
+              ) : (
+                <span className="text-neutral-500">활성 실험 없음(기본 파라미터) — "전략 개선 루프" 탭에서 실험·활성화</span>
+              )}
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {set.tickets.map((t, i) => (
+                <TicketCard key={t.rec_id ?? i} t={t} alpha={alpha} strategy={set.strategy} targetDrawNo={res.target_draw_no} />
+              ))}
+            </div>
+          </div>
+        ))}
+        <div className="rounded-lg border border-neutral-200 p-3 text-xs dark:border-neutral-700" data-testid="analysis-basis">
+          <div className="mb-1 font-semibold text-sm">분석 근거 (군 A → 추천)</div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <span>군 A run: <span className="font-mono">{res.analysis_basis.run_id_a?.slice(0, 8) ?? '없음'}</span></span>
+            <span>이력 T={res.analysis_basis.history_T} (군 A 경계 {res.analysis_basis.train_end_draw})</span>
+            <span>
+              <Term id="winners_model">당첨자수 모형</Term> {res.analysis_basis.winners_model_used ? '사용' : '미사용'}
+            </span>
+          </div>
+          <div className="mt-1">
+            상위 |<Term id="z_score">z</Term>| 번호:{' '}
+            {res.analysis_basis.top_abs_z_numbers.map((n) => (
+              <span key={n.number} className="mr-2 tabular-nums">
+                {n.number}({fmtSigned(n.z, 2)})
+              </span>
+            ))}
+          </div>
+          <div className="mt-1">
+            상위 <Term id="calibrated_lift">Lift*</Term> 쌍:{' '}
+            {res.analysis_basis.top_lift_pairs.map((p) => (
+              <span key={`${p.a}-${p.b}`} className="mr-2 tabular-nums">
+                {p.a}–{p.b}({fmtNum(p.lift, 2)})
+              </span>
+            ))}
+          </div>
+          <p className="mt-1 text-neutral-500">{res.analysis_basis.cohort_note}</p>
+        </div>
+        <PolicyBanner compact lines={[res.policy]} />
+      </div>
+    </Section>
   );
 }
 
@@ -208,15 +288,32 @@ export default function Recommend() {
   useEffect(() => {
     if (config.data && count === '') setCount(String(config.data.lotto_number_recommendation_count));
   }, [config.data, count]);
+  const invalidateAfterRecommend = () => {
+    void qc.invalidateQueries({ queryKey: ['recommend', 'history'] });
+    void qc.invalidateQueries({ queryKey: ['tracking'] });
+    void qc.invalidateQueries({ queryKey: ['user'] }); // S5.7: 다음 회차 추천 저장 → 내 번호 현재 대상 회차 전환
+  };
   const m = useMutation({
     mutationFn: (b: RecommendIn) => api.recommend.create(b),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['recommend', 'history'] });
-      void qc.invalidateQueries({ queryKey: ['tracking'] });
-    },
+    onSuccess: invalidateAfterRecommend,
   });
+  // S4.11 추천 생성(순차) — 전략 선택의 모든 전략을 순서대로 같은 옵션으로 생성 (전략별 batch, control 미포함)
+  const seq = useMutation({
+    mutationFn: (b: SequentialIn) => api.recommend.sequential(b),
+    onSuccess: invalidateAfterRecommend,
+  });
+  const runSequential = () => {
+    m.reset();
+    seq.mutate({
+      count: count ? Number(count) : null,
+      seed: seed ? Number(seed) : null,
+      max_shared: maxShared ? Number(maxShared) : null,
+      save,
+    });
+  };
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    seq.reset();
     m.mutate({
       strategy,
       count: count ? Number(count) : null,
@@ -322,7 +419,7 @@ export default function Recommend() {
             </button>
           ))}
         </div>
-        <form onSubmit={submit} className="mt-4 grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <form onSubmit={submit} className="mt-4 grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-7">
           <Field label="추천 개수" hint={`기본 ${config.data?.lotto_number_recommendation_count ?? '—'} (.env)`}>
             <input className={inputCls} type="number" min={1} max={50} value={count} onChange={(e) => setCount(e.target.value)} />
           </Field>
@@ -342,87 +439,46 @@ export default function Recommend() {
               <input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} /> 저장 (성과 추적)
             </label>
           </FormSlot>
-          <FormSlot>
-            <button type="submit" className={btnCls} disabled={m.isPending}>
-              {m.isPending ? '생성 중…' : '추천 생성'}
-            </button>
+          <FormSlot className="sm:col-span-2">
+            <span className="inline-flex flex-nowrap items-center gap-2 whitespace-nowrap" data-testid="recommend-buttons">
+              <button type="submit" className={btnCls} disabled={m.isPending || seq.isPending}>
+                {m.isPending ? '생성 중…' : '추천 생성'}
+              </button>
+              <button
+                type="button"
+                className={`${btnCls} bg-emerald-700 hover:bg-emerald-800`}
+                disabled={m.isPending || seq.isPending || !strategies.data?.length}
+                title={`전략 선택의 ${strategies.data?.length ?? 0}개 전략을 순서대로 같은 옵션(개수·seed·최대 공유·저장)으로 생성합니다. 전략마다 별도 batch, 균등 기준선은 'uniform' 전략이 담당`}
+                onClick={runSequential}
+              >
+                {seq.isPending ? `순차 생성 중… (${strategies.data?.length ?? 0}전략)` : '추천 생성(순차)'}
+              </button>
+            </span>
           </FormSlot>
         </form>
         {m.isError && <ErrorBox error={m.error} />}
+        {seq.isError && <ErrorBox error={seq.error} />}
       </Section>
 
       <Section title={<Term id="backtest" icon>선택 전략의 군 B backtest 요약</Term>}>
         <BacktestSummary strategy={strategy} />
       </Section>
 
-      {res && (
-        <Section
-          title={`추천 결과 — 대상 ${res.target_draw_no}회`}
-          right={
-            <span className="text-xs text-neutral-500">
-              batch {res.batch_id.slice(0, 8)} · seed {res.seed} · 이력 T={res.history_T} · run {res.run_id?.slice(0, 8) ?? '—'}
-            </span>
-          }
-        >
-          <div className="space-y-5">
-            {res.sets.map((set) => (
-              <div key={set.strategy}>
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <h3 className="text-sm font-semibold">{set.label}</h3>
-                  {set.is_control && <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[11px] dark:bg-neutral-700">control</span>}
-                  <span className="text-xs text-neutral-500">
-                    {set.basis} · 기대: {set.expectation} · {set.tickets.length}장
-                  </span>
-                </div>
-                <div className="mb-2 flex flex-wrap items-center gap-2 text-xs" data-testid="set-basis">
-                  <span className="rounded bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800">
-                    <Term id="strategy_params">파라미터</Term>: {fmtParams(set.params_used)}
-                  </span>
-                  {set.experiment ? (
-                    <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-800 dark:bg-blue-950 dark:text-blue-200">
-                      활성 실험 v{set.experiment.iteration} · <Term id="holdout">홀드아웃</Term> 균등 대비 {fmtSigned(set.experiment.holdout?.mean ?? null, 4)} · {set.experiment.verdict ?? ''}
-                    </span>
-                  ) : (
-                    <span className="text-neutral-500">활성 실험 없음(기본 파라미터) — "전략 개선 루프" 탭에서 실험·활성화</span>
-                  )}
-                </div>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {set.tickets.map((t, i) => (
-                    <TicketCard key={t.rec_id ?? i} t={t} alpha={alpha} strategy={set.strategy} targetDrawNo={res.target_draw_no} />
-                  ))}
-                </div>
-              </div>
-            ))}
-            <div className="rounded-lg border border-neutral-200 p-3 text-xs dark:border-neutral-700" data-testid="analysis-basis">
-              <div className="mb-1 font-semibold text-sm">분석 근거 (군 A → 추천)</div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1">
-                <span>군 A run: <span className="font-mono">{res.analysis_basis.run_id_a?.slice(0, 8) ?? '없음'}</span></span>
-                <span>이력 T={res.analysis_basis.history_T} (군 A 경계 {res.analysis_basis.train_end_draw})</span>
-                <span>
-                  <Term id="winners_model">당첨자수 모형</Term> {res.analysis_basis.winners_model_used ? '사용' : '미사용'}
-                </span>
-              </div>
-              <div className="mt-1">
-                상위 |<Term id="z_score">z</Term>| 번호:{' '}
-                {res.analysis_basis.top_abs_z_numbers.map((n) => (
-                  <span key={n.number} className="mr-2 tabular-nums">
-                    {n.number}({fmtSigned(n.z, 2)})
-                  </span>
-                ))}
-              </div>
-              <div className="mt-1">
-                상위 <Term id="calibrated_lift">Lift*</Term> 쌍:{' '}
-                {res.analysis_basis.top_lift_pairs.map((p) => (
-                  <span key={`${p.a}-${p.b}`} className="mr-2 tabular-nums">
-                    {p.a}–{p.b}({fmtNum(p.lift, 2)})
-                  </span>
-                ))}
-              </div>
-              <p className="mt-1 text-neutral-500">{res.analysis_basis.cohort_note}</p>
-            </div>
-            <PolicyBanner compact lines={[res.policy]} />
+      {res && <RecommendResultSection res={res} alpha={alpha} />}
+      {seq.data && (
+        <>
+          <div role="status" aria-label="순차 생성 요약" className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100">
+            순차 생성 완료 — {seq.data.results.length}전략 · {seq.data.total_tickets}장 · 대상 {seq.data.target_draw_no ?? '—'}회 · sequence {seq.data.sequence_id.slice(0, 8)}
+            {seq.data.failed.length > 0 && (
+              <span className="ml-2 text-amber-800 dark:text-amber-200">
+                실패 {seq.data.failed.length}: {seq.data.failed.map((f) => `${labelOf(f.strategy)} (${f.error})`).join(', ')}
+              </span>
+            )}
           </div>
-        </Section>
+          {seq.data.results.map((r, idx) => (
+            <RecommendResultSection key={r.batch_id} res={r} alpha={alpha} titlePrefix={`순차 ${idx + 1}/${seq.data!.results.length} · ${r.sets[0]?.label ?? labelOf(r.sets[0]?.strategy ?? '')}`} />
+          ))}
+        </>
       )}
 
       <Section
@@ -507,7 +563,7 @@ export default function Recommend() {
               disabled={autoReg.isPending}
               onClick={() => {
                 const d = hTarget ? `${hTarget}회` : '최신 회차 + 1';
-                if (window.confirm(`대상 회차 ${d} 의 전략별 최신 추천 티켓 중 무작위 빈도 상위 5개 위치를 내 번호로 등록할까요?\n이미 등록된 번호는 건너뜁니다.`))
+                if (window.confirm(`대상 회차 ${d} 의 전략별 최신 추천 티켓 중 무작위 빈도 상위 5개 위치를 내 번호로 등록할까요?\n이미 등록된 번호는 새 행 없이 ★ 중복(×n)으로 병합됩니다.`))
                   autoReg.mutate();
               }}
             >

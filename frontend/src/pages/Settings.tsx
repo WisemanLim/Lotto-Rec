@@ -21,6 +21,10 @@ const CONFIG_HELP: Record<string, string> = {
   mc_iterations: 'MC 반복수 프리셋 quick/report/deep (LOTTO_MC_ITERATIONS[_REPORT|_DEEP])',
   lotto_random_seed: '기본 seed (LOTTO_RANDOM_SEED)',
   lotto_auto_rerun_preset: '새 회차 삽입 후 자동 재분석 프리셋 (LOTTO_AUTO_RERUN_PRESET, off 가능)',
+  lotto_cross_draw_lag: '회차간 교차 공출현 전/후 간격 L (LOTTO_CROSS_DRAW_LAG, 1–50) — run 생성 시 고정, 변경 후 재분석 필요',
+  lotto_min_effect_delta: '네트워크 엣지 최소 효과크기 |Lift*−1| (LOTTO_MIN_EFFECT_DELTA)',
+  lotto_run_retention: '분석 run 보존 개수, 0=무제한 (LOTTO_RUN_RETENTION)',
+  timezone: '표시 시간대 (LOTTO_TIMEZONE)',
 };
 
 function NewRunForm() {

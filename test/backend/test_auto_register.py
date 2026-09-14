@@ -1,9 +1,13 @@
-"""S4.10 — 내 번호로 자동 등록: 무작위 빈도 상위 5 위치 → 전략별 최신 batch 티켓 등록, 중복 건너뜀."""
+"""S4.10 — 내 번호로 자동 등록: 무작위 빈도 상위 5 위치 → 전략별 최신 batch 티켓 등록, 중복은 병합(S5.6)."""
 
 from __future__ import annotations
 
 
-def test_auto_register_selects_and_registers(seeded: None, client) -> None:  # noqa: ANN001
+def test_auto_register_selects_and_registers(seeded: None, client, monkeypatch) -> None:  # noqa: ANN001
+    # 풀 크기는 .env.local 값에 따라 달라지므로 테스트에서는 10 으로 고정
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "lotto_number_recommendation_count", 10)
     target = client.get("/api/v1/data/summary").json()["max_draw"] + 1
     r = client.post("/api/v1/recommend", json={"strategy": "frequency_hot", "count": 10, "seed": 5})
     assert r.status_code == 200, r.text
@@ -35,11 +39,15 @@ def test_auto_register_selects_and_registers(seeded: None, client) -> None:  # n
     assert len(after) == before + body["total_registered"]
     assert any(t["label"].startswith("추천 ") and t["target_draw_no"] == target for t in after)
 
-    # 같은 seed 재실행 → 같은 선택, 전부 건너뜀
+    # 같은 seed 재실행 → 같은 선택, 전부 병합(★ dup_count=2), 행 수 불변 (S5.6)
     res2 = client.post("/api/v1/recommend/auto-register", json={"seed": 42}).json()
     assert res2["selected"] == body["selected"]
-    assert res2["total_registered"] == 0 and res2["total_skipped"] == body["total_registered"]
-    assert len(client.get("/api/v1/user/tickets?limit=2000").json()) == len(after)
+    assert res2["total_registered"] == 0 and res2["total_merged"] == body["total_registered"]
+    merged = [m for s in res2["strategies"] for m in s["merged_duplicates"]]
+    assert merged and all(m["dup_count"] >= 2 and m["ticket_id"] for m in merged)
+    after2 = client.get("/api/v1/user/tickets?limit=2000").json()
+    assert len(after2) == len(after)
+    assert any(t["dup_count"] >= 2 and t["duplicate"] for t in after2)
 
     # seed 미지정 → 응답에 seed 포함
     res3 = client.post("/api/v1/recommend/auto-register", json={}).json()

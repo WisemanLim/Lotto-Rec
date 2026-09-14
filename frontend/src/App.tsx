@@ -6,6 +6,7 @@ import Frequency from './pages/Frequency';
 import Pairs from './pages/Pairs';
 import Groups from './pages/Groups';
 import Temporal from './pages/Temporal';
+import CrossDraw from './pages/CrossDraw';
 import Validation from './pages/Validation';
 import Recommend from './pages/Recommend';
 import MyNumbers from './pages/MyNumbers';
@@ -24,6 +25,7 @@ export default function App() {
           <Route path="/pairs" element={<Pairs />} />
           <Route path="/groups" element={<Groups />} />
           <Route path="/temporal" element={<Temporal />} />
+          <Route path="/cross-draw" element={<CrossDraw />} />
           <Route path="/validation" element={<Validation />} />
           <Route path="/recommend" element={<Recommend />} />
           <Route path="/my-numbers" element={<MyNumbers />} />

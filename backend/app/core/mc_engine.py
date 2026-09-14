@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from app.core.cross_draw import max_abs_cross_z_batch
 from app.core.frequency import pearson_x2
 from app.core.null_model import GAME, Game, iter_null_chunks
 from app.core.order_stats import q_statistic_batch
@@ -26,6 +27,8 @@ class NullDistributions:
     overlap_mean: np.ndarray = field(default_factory=lambda: np.zeros(0))
     max_abs_lag1: np.ndarray = field(default_factory=lambda: np.zeros(0))
     cusum_max: np.ndarray = field(default_factory=lambda: np.zeros(0))
+    max_abs_z_cross: np.ndarray = field(default_factory=lambda: np.zeros((0, 0)))  # (B, L+1): lag 1..L, 창
+    cross_max_lag: int = 0
 
     def summary(self) -> dict:
         def q(a: np.ndarray) -> dict:
@@ -49,6 +52,9 @@ class NullDistributions:
             "overlap_mean": q(self.overlap_mean),
             "max_abs_lag1": q(self.max_abs_lag1),
             "cusum_max": q(self.cusum_max),
+            "cross_max_lag": self.cross_max_lag,
+            "max_abs_z_cross_window": q(self.max_abs_z_cross[:, -1]) if self.max_abs_z_cross.size else {},
+            "max_abs_z_cross_lag1": q(self.max_abs_z_cross[:, 0]) if self.max_abs_z_cross.size else {},
         }
 
 
@@ -59,9 +65,10 @@ def run_null_simulation(
     game: Game = GAME,
     chunk: int = 64,
     progress: Callable[[float], None] | None = None,
+    cross_max_lag: int = 0,
 ) -> NullDistributions:
-    nd = NullDistributions(n_sims=n_sims, seed=seed)
-    acc: dict[str, list[np.ndarray]] = {k: [] for k in ("x2", "mz1", "q", "mzp", "gx", "ov", "lag1", "cus")}
+    nd = NullDistributions(n_sims=n_sims, seed=seed, cross_max_lag=cross_max_lag)
+    acc: dict[str, list[np.ndarray]] = {k: [] for k in ("x2", "mz1", "q", "mzp", "gx", "ov", "lag1", "cus", "cross")}
     p = game.p_single
     done = 0
     for draws, x in iter_null_chunks(seed, n_sims, T, game, chunk):
@@ -76,6 +83,8 @@ def run_null_simulation(
         acc["ov"].append(overlap_batch_mean(x))
         acc["lag1"].append(max_abs_lag1_batch(x))
         acc["cus"].append(cusum_max_batch(x, p))
+        if cross_max_lag > 0:
+            acc["cross"].append(max_abs_cross_z_batch(x, cross_max_lag, game))
         done += S
         if progress:
             progress(done / n_sims)
@@ -87,6 +96,8 @@ def run_null_simulation(
     nd.overlap_mean = np.concatenate(acc["ov"])
     nd.max_abs_lag1 = np.concatenate(acc["lag1"])
     nd.cusum_max = np.concatenate(acc["cus"])
+    if cross_max_lag > 0:
+        nd.max_abs_z_cross = np.concatenate(acc["cross"])
     return nd
 
 

@@ -12,6 +12,7 @@ test('용어 사전: 45개 이상, id 유일, 모든 항목에 설명·대부분
   }
   expect(GLOSSARY.filter((t) => (t.links?.length ?? 0) > 0).length).toBeGreaterThan(GLOSSARY.length * 0.6);
   expect(GLOSSARY_BY_ID.hypergeom.short).toMatch(/비복원/);
+  expect(GLOSSARY_BY_ID.duplicate_ticket.detail).toMatch(/증거가 아니다/);
 });
 
 test('Term: hover 시 tooltip(설명+링크) 표시, ESC 로 닫힘, 미등록 id 는 텍스트만', () => {
@@ -46,4 +47,28 @@ test('Term icon 모드: (?) 버튼 클릭으로 토글', () => {
   const btn = screen.getByRole('button', { name: /maxT.*설명/ });
   fireEvent.click(btn);
   expect(screen.getByRole('tooltip')).toHaveTextContent(/가장 극단적인 값/);
+});
+
+test('Term tooltip: whitespace-nowrap 컨테이너(표 헤더) 안에서도 줄바꿈·폭 상한 (v1.10.1 사용자 보고)', () => {
+  render(
+    <MemoryRouter>
+      <table>
+        <thead>
+          <tr>
+            <th className="whitespace-nowrap">
+              <Term id="p_value" icon>
+                p
+              </Term>
+            </th>
+          </tr>
+        </thead>
+      </table>
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByRole('button', { name: /설명/ }));
+  const tip = screen.getByRole('tooltip');
+  expect(tip.className).toMatch(/\bwhitespace-normal\b/);
+  expect(tip.className).toMatch(/\bbreak-words\b/);
+  expect(tip.className).toMatch(/max-w-\[calc\(100vw-2rem\)\]/);
+  expect(tip).toHaveTextContent('p-value');
 });

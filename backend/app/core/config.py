@@ -14,7 +14,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(PROJECT_ROOT / ".env.local", PROJECT_ROOT / ".env.local.example"),
+        # pydantic-settings: 뒤에 오는 파일이 앞 파일을 덮어쓴다 → example(기본값) → .env → .env.local(사용자 값) 순.
+        # 실제 OS 환경변수는 모든 파일보다 우선.
+        env_file=(PROJECT_ROOT / ".env.local.example", PROJECT_ROOT / ".env", PROJECT_ROOT / ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -44,6 +46,7 @@ class Settings(BaseSettings):
     lotto_mc_iterations_deep: int = 500_000
     lotto_random_seed: int = 20260908
     lotto_min_effect_delta: float = 0.25
+    lotto_cross_draw_lag: int = Field(default=5, ge=1, le=50)  # 회차간 전/후 간격 L (S2.13)
     lotto_auto_rerun_preset: Literal["quick", "report", "deep", "off"] = "quick"
     lotto_run_retention: int = Field(default=20, ge=0)
     lotto_timezone: str = "Asia/Seoul"  # 표시 시간대(IANA). 저장은 UTC
