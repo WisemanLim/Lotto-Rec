@@ -80,6 +80,7 @@ export interface AppConfig {
   lotto_cross_draw_lag?: number;
   lotto_min_effect_delta?: number;
   lotto_run_retention?: number;
+  lotto_recent_draws?: number;
   timezone?: string;
 }
 

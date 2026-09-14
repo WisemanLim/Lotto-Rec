@@ -2,7 +2,9 @@
 # 실행: make local-all  (= nohup uv --directory backend run honcho -f ../Procfile.dev start, 백그라운드)
 # 검증: make local-ps · 로그: make local-logs · 종료: make local-stop
 # honcho 는 backend/ 를 cwd 로 실행되므로 경로는 backend/ 기준.
-web: uv run uvicorn app.main:app --reload --host ${LOTTO_BACKEND_HOST:-127.0.0.1} --port ${LOTTO_BACKEND_PORT:-8000}
+# --reload-dir .. + --reload-include .env/.env.local: 루트 .env 파일 변경도 재기동 트리거(설정 즉시 반영, v1.14.3).
+#   frontend/data/test 는 감시 제외(FileFilter). 기본 *.py 감시는 유지.
+web: uv run uvicorn app.main:app --reload --reload-dir .. --reload-include .env --reload-include .env.local --reload-exclude ../frontend --reload-exclude ../data --reload-exclude ../test --host ${LOTTO_BACKEND_HOST:-127.0.0.1} --port ${LOTTO_BACKEND_PORT:-8000}
 frontend: cd ../frontend && pnpm dev --host ${LOTTO_BACKEND_HOST:-127.0.0.1} --port ${LOTTO_FRONTEND_PORT:-5173}
 # 워커 예시(MC 장기 작업을 별도 프로세스로 분리할 경우 — P2):
 # worker: uv run python -m app.worker

@@ -85,6 +85,7 @@ LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all   # honcho �
 | `LOTTO_AUTO_RERUN_PRESET` | quick | 새 회차 삽입 후 자동 재분석(`off` 가능) |
 | `LOTTO_RUN_RETENTION` | 20 | 분석 run 보존 개수(0=무제한). 군별 최신·활성 실험 참조 run 은 보존 |
 | `LOTTO_CROSS_DRAW_LAG` | 5 | **회차간 교차 공출현 전/후 간격 L**(1–50). lag 1..L 개별 + 창 합산 분석, 경계 회차(앞·뒤 L 회)는 간격 내 가능한 쌍만 포함. 변경 후 `make local-restart` → 새 분석 run(또는 `make reanalyze`). 현재 값은 `GET /config`·설정 화면에서 확인, 회차간 연관성 화면이 run 의 L 과 다르면 안내 |
+| `LOTTO_RECENT_DRAWS` | 5 | 내 번호 '저장된 번호' 타이틀 우측 **최근 당첨번호 회차 수**(1–20, S5.8). `/config` `lotto_recent_draws` 로 노출. local 은 **저장 즉시 자동 반영**(uvicorn 이 `.env.local` 감시), docker 는 `make docker-restart` |
 | `LOTTO_PRIZE_RANK3_DEFAULT` / `_RANK4_` / `_RANK5_` | 1500000 / 50000 / 5000 | 3·4·5등 고정 당첨금(가정값, 성과추적) |
 | `DATABASE_URL` | `sqlite:///./data/lotto.db` | 루트 기준 상대경로 → 절대경로 자동 변환 |
 | `LOTTO_BACKEND_PORT` / `LOTTO_FRONTEND_PORT` | 8000 / 5173 | 127.0.0.1 바인딩 |
@@ -163,6 +164,10 @@ curl -s localhost:8000/api/v1/analysis/runs/<run_id>/summary | jq .kpi
 | impl/18th | S5.6 내 번호 **★ 중복 ×n 표시** — 같은 번호·회차 등록은 병합(`user_ticket.dup_count/dup_labels`, Alembic 5b12a3e1), 다른 회차 동일 번호는 `same_number_ticket_ids` 로 묶음, 자동 등록 skip→merge, 용어 `duplicate_ticket`(중복 생성 ≠ 유의성 증거) | PASS 8/8 (pytest 63, vitest 35) |
 | impl/19th | 버그 수정 — 내 번호 보너스 포함 평가 시 백색 화면(스코어카드 `bonus` dict → int, `bonus_info` 분리, ScorecardView 방어 렌더) | PASS 4/4 (pytest 63, vitest 37) |
 | impl/20th | 버그 수정 — `.env.local` 값 미적용(pydantic-settings `env_file` 뒤 파일 우선 → example 이 덮어씀; 순서 example → `.env` → `.env.local` 로 수정, 우선순위 회귀 테스트) | PASS 6/6 (pytest 65, vitest 37) |
+| impl/31st | 사용자 보고 "`LOTTO_RECENT_DRAWS` 수정해도 미적용" — uvicorn `--reload` 가 `backend/*.py` 만 감시. Procfile `--reload-dir .. --reload-include .env.local`(frontend/data/test 제외)로 **`.env` 저장 즉시 재기동**(1초 내 반영 확인). `make local-restart` 포트 경쟁(`Address already in use`) 수정 | PASS 4/4 |
+| impl/30th | S5.8 최근 당첨번호 **2열 그리드**(`grid-cols-[repeat(2,max-content)]`, 라벨 줄바꿈 금지, 우측 도구 `shrink-0`) — 3열은 1280px 에서 우측 도구와 겹쳐 사용자 결정 2열 | PASS 3/3 (pytest 76, vitest 46) |
+| impl/29th | S5.8 최근 당첨번호 회차 수 **`.env` 관리** — `LOTTO_RECENT_DRAWS`(기본 5, 1–20) → `/config` `lotto_recent_draws` → 내 번호 화면(config 로드 후 1회 요청), 설정 화면 설명·계약 테스트 | PASS 5/5 (pytest 76, vitest 46) |
+| impl/28th | S5.8 **저장된 번호 헤더 정렬·최근 당첨번호** — '대상 회차' 필터·'등록된 번호로 추첨 시도' 버튼을 우측 세로 2줄로, 타이틀 우측에 최신 5회차 당첨번호(`GET /data/draws?limit=5&order=desc`, 표시 전용; Section `aside` 슬롯) | PASS 6/6 (pytest 76, vitest 46) |
 | impl/27th | S7.1 **docker compose 구동** — Dockerfile 정비(lock 고정·`.dockerignore`·`/srv/lotto` 루트), api 엔트리포인트 `alembic upgrade head`(선택 시드) → uvicorn, web Vite 프록시 → `api:8000`, `make docker-*` 9종. 실측: 빌드·기동(18000/15173) → 마이그레이션 로그·health·API(1,241회)·프론트 프록시 OK, 빈 DB 마이그레이션 3단계 적용, honcho 충돌 안내 | PASS 8/8 (pytest 76, vitest 45) |
 | impl/26th | UI 수정 — '추천 생성'·'추천 생성(순차)' 두 줄 표시 → 버튼 슬롯 2열·줄바꿈 금지로 한 줄 배치 | PASS 3/3 (vitest 45) |
 | impl/25th | S4.11 **추천 생성(순차)** — '추천 생성' 우측 버튼, 전략 선택의 모든 전략을 순서대로 같은 옵션으로 생성(전략별 batch, `POST /recommend/sequential`), 전략별 결과 섹션 + 요약 | PASS 5/5 (pytest 76, vitest 45) |
@@ -202,7 +207,7 @@ Lotto-Rec/
 | 추천이 `fallback: winners_model 없음` | 완료된 군 A 분석 run 이 없음 → 먼저 분석 실행 |
 | Tailwind 설정(darkMode 등) 변경 후 화면 반영 안 됨 | Vite dev 서버가 tailwind.config 를 시작 시 로드 → `make local-restart` |
 | 추천 이력이 "전체"인데 건수가 적음 | 이력 기본 출처 = 사용자 생성(저장 체크한 추천만). 검증 replay 가 만든 시뮬레이션 티켓은 출처 필터를 "검증 replay" 또는 "전체"로 |
-| `LOTTO_CROSS_DRAW_LAG` 를 바꿨는데 회차간 연관성 화면이 그대로 / 설정 화면에 안 보임 | 간격은 run 생성 시점에 고정됨(섹션 `max_lag`). 순서: `.env.local` 수정 → `make local-restart` → 설정 화면 `lotto_cross_draw_lag` 값 확인 → 새 분석 run 또는 `make reanalyze`. 회차간 연관성 화면은 run 의 L 과 현재 설정 L 이 다르면 파란 안내를 띄움(v1.11.1) |
+| `LOTTO_CROSS_DRAW_LAG` 를 바꿨는데 회차간 연관성 화면이 그대로 / 설정 화면에 안 보임 | 간격은 run 생성 시점에 고정됨(섹션 `max_lag`). 순서: `.env.local` 수정(local 은 저장 즉시 backend 자동 재기동, v1.14.3; docker 는 `make docker-restart`) → 설정 화면 `lotto_cross_draw_lag` 값 확인 → 새 분석 run 또는 `make reanalyze`. 회차간 연관성 화면은 run 의 L 과 현재 설정 L 이 다르면 파란 안내를 띄움(v1.11.1) |
 | 회차간 연관성에서 어떤 번호의 대각(재출현) 셀만 크게 보임 | 해당 번호의 전체 출현 빈도가 높은 효과. 표시·판정에 쓰는 z 는 주변빈도 **조건부** 독립성 z 라 부풀려지지 않음(무조건 기대는 참고 열 `기대(H0)`) |
 | 추첨 결과 등록 후 '내 번호' 저장 목록이 비어 보임 | S5.7 설계: 다음 회차 추천을 저장(또는 다음 회차 번호 등록)한 순간 목록이 다음 회차로 전환됨. 이전 회차 번호는 삭제되지 않음 — '대상 회차' 필터에서 해당 회차 또는 '전체 회차' 선택 |
 | 표 헤더의 (?) 툴팁 글이 박스 밖으로 한 줄로 흘러나감 | `DataTable` th/td 의 `whitespace-nowrap` 이 툴팁에 상속됨. v1.10.1 에서 `Term` 툴팁에 `whitespace-normal break-words`·`max-w-[calc(100vw-2rem)]` 강제 — 줄바꿈되며 세로 크기는 자동 |

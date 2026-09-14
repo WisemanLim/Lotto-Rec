@@ -22,11 +22,19 @@ export function Empty({ children = '데이터 없음' }: { children?: ReactNode 
   return <div className="rounded-md border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700">{children}</div>;
 }
 
-export function Section({ title, children, right, className = '' }: { title: ReactNode; children: ReactNode; right?: ReactNode; className?: string }) {
+/** 섹션 카드 — `aside` 는 타이틀 바로 우측(헤더 좌측 그룹)에 붙는 보조 내용(S5.8 최근 당첨번호 등). */
+export function Section({ title, children, right, aside, className = '' }: { title: ReactNode; children: ReactNode; right?: ReactNode; aside?: ReactNode; className?: string }) {
   return (
     <section className={`rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900 ${className}`}>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">{title}</h2>
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        {aside ? (
+          <div className="flex flex-1 flex-wrap items-start gap-3">
+            <h2 className="text-base font-semibold">{title}</h2>
+            {aside}
+          </div>
+        ) : (
+          <h2 className="text-base font-semibold">{title}</h2>
+        )}
         {right}
       </div>
       {children}

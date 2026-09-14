@@ -24,6 +24,7 @@ const CONFIG_HELP: Record<string, string> = {
   lotto_cross_draw_lag: '회차간 교차 공출현 전/후 간격 L (LOTTO_CROSS_DRAW_LAG, 1–50) — run 생성 시 고정, 변경 후 재분석 필요',
   lotto_min_effect_delta: '네트워크 엣지 최소 효과크기 |Lift*−1| (LOTTO_MIN_EFFECT_DELTA)',
   lotto_run_retention: '분석 run 보존 개수, 0=무제한 (LOTTO_RUN_RETENTION)',
+  lotto_recent_draws: "내 번호 '저장된 번호' 타이틀 우측 최근 당첨번호 회차 수 (LOTTO_RECENT_DRAWS, 1–20)",
   timezone: '표시 시간대 (LOTTO_TIMEZONE)',
 };
 

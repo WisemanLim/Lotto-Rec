@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     lotto_cross_draw_lag: int = Field(default=5, ge=1, le=50)  # 회차간 전/후 간격 L (S2.13)
     lotto_auto_rerun_preset: Literal["quick", "report", "deep", "off"] = "quick"
     lotto_run_retention: int = Field(default=20, ge=0)
+    lotto_recent_draws: int = Field(default=5, ge=1, le=20)  # 내 번호 최근 당첨번호 회차 수 (S5.8)
     lotto_timezone: str = "Asia/Seoul"  # 표시 시간대(IANA). 저장은 UTC
 
     # 고정 당첨금 (회차 데이터 부재 — 가정값, PRD Q4)

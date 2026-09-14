@@ -108,6 +108,7 @@ def test_core_response_shapes(seeded: None, client) -> None:  # noqa: ANN001
         ("mc_iterations", dict),
         ("lotto_cross_draw_lag", int),
         ("lotto_min_effect_delta", float),
+        ("lotto_recent_draws", int),
         ("lotto_run_retention", int),
         ("timezone", str),
     ):

@@ -94,6 +94,8 @@ ifeq ($(PROC_MGR),pm2)
 	$(PM2) restart ecosystem.config.cjs
 else
 	@if [ -f $(HONCHO_PIDFILE) ]; then pkill -P $$(cat $(HONCHO_PIDFILE)) 2>/dev/null || true; kill $$(cat $(HONCHO_PIDFILE)) 2>/dev/null || true; rm -f $(HONCHO_PIDFILE); fi
+	@# 이전 uvicorn(reloader+worker)이 포트를 놓을 때까지 대기 — 바로 기동하면 "Address already in use" 로 둘 다 종료됨
+	@i=0; while pgrep -f "uvicorn app.main:app" >/dev/null 2>&1 && [ $$i -lt 50 ]; do sleep 0.2; i=$$((i+1)); done
 	@mkdir -p .make; nohup $(HONCHO) start > $(HONCHO_LOGFILE) 2>&1 & echo $$! > $(HONCHO_PIDFILE)
 	@echo "honcho 재기동 (pid $$(cat $(HONCHO_PIDFILE)))"
 endif

@@ -24,6 +24,14 @@ export default function MyNumbers() {
   // S5.7 현재 대상 회차: null = 자동(서버 active_target_draw), 'all' = 전체, number = 특정 회차
   const [drawSel, setDrawSel] = useState<number | 'all' | null>(null);
   const draws = useQuery({ queryKey: ['user', 'ticket-draws'], queryFn: api.user.ticketDraws });
+  // S5.8 타이틀 우측 최근 당첨번호 — 최신 회차부터 LOTTO_RECENT_DRAWS 회차(/config lotto_recent_draws, 기본 5), 표시 전용
+  const config = useQuery({ queryKey: ['config'], queryFn: api.config });
+  const recentN = config.data?.lotto_recent_draws ?? 5;
+  const recent = useQuery({
+    queryKey: ['data', 'draws', 'recent', recentN],
+    queryFn: () => api.data.draws({ limit: recentN, order: 'desc' }),
+    enabled: config.isSuccess,
+  });
   const ctx: TicketDraws | undefined = draws.data;
   const effectiveDraw: number | 'all' | null = drawSel ?? ctx?.active_target_draw ?? null;
   const tickets = useQuery({
@@ -140,8 +148,20 @@ export default function MyNumbers() {
             {effectiveDraw === 'all' ? '저장된 번호 (전체 회차)' : effectiveDraw ? `저장된 번호 (대상 ${effectiveDraw}회)` : '저장된 번호'}
           </Term>
         }
+        aside={
+          recent.data?.length ? (
+            <ul className="grid grid-cols-1 gap-x-4 gap-y-1 text-xs text-neutral-600 sm:grid-cols-[repeat(2,max-content)] dark:text-neutral-300" aria-label={`최근 당첨번호 ${recent.data.length}회차`}>
+              {recent.data.map((d) => (
+                <li key={d.draw_no} className="flex items-center gap-2 whitespace-nowrap">
+                  <span className="w-11 shrink-0 tabular-nums">{d.draw_no}회</span>
+                  <BallRow numbers={d.numbers} bonus={d.bonus} size="sm" />
+                </li>
+              ))}
+            </ul>
+          ) : undefined
+        }
         right={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex shrink-0 flex-col items-end gap-2" aria-label="저장된 번호 도구">
             {ctx && (
               <label className="text-xs">
                 대상 회차{' '}
