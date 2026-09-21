@@ -25,6 +25,7 @@ const CONFIG_HELP: Record<string, string> = {
   lotto_min_effect_delta: '네트워크 엣지 최소 효과크기 |Lift*−1| (LOTTO_MIN_EFFECT_DELTA)',
   lotto_run_retention: '분석 run 보존 개수, 0=무제한 (LOTTO_RUN_RETENTION)',
   lotto_recent_draws: "내 번호 '저장된 번호' 타이틀 우측 최근 당첨번호 회차 수 (LOTTO_RECENT_DRAWS, 1–20)",
+  lotto_lottery_pick_count: "내 번호 '등록된 번호로 추첨 시도' 선택(★) 개수 기본값 (LOTTO_LOTTERY_PICK_COUNT, 1–50) — 화면 입력 박스로 세션 단위 수정",
   lotto_prize_rank3_default: '3등 1게임당 당첨금 기본값 — 회차에 실제 값이 없을 때만 사용 (LOTTO_PRIZE_RANK3_DEFAULT)',
   lotto_prize_rank4_default: '4등 1게임당 고정 당첨금 (LOTTO_PRIZE_RANK4_DEFAULT)',
   lotto_prize_rank5_default: '5등 1게임당 고정 당첨금 (LOTTO_PRIZE_RANK5_DEFAULT)',

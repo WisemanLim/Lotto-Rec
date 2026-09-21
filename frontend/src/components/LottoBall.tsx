@@ -1,5 +1,5 @@
 import type { PastWin } from '../api/client';
-import { BALL_HEX, ballTone } from '../lib/colors';
+import { BALL_HEX, ballTone, hitRingShadow } from '../lib/colors';
 
 interface Props {
   n: number;
@@ -9,12 +9,14 @@ interface Props {
   onClick?: () => void;
   selected?: boolean;
   title?: string;
+  /** S5.10 최근 6회차 1등 번호 출현 횟수 (1 이상이면 흰 안쪽 테두리 + 횟수별 색 테두리) */
+  hits?: number;
 }
 
 const SIZE = { sm: 'h-6 w-6 text-[11px]', md: 'h-8 w-8 text-sm', lg: 'h-10 w-10 text-base' };
 
 /** 한국 로또 구간색 공 (1–10 노랑, 11–20 파랑, 21–30 빨강, 31–40 회색, 41–45 초록). */
-export default function LottoBall({ n, size = 'md', bonus, dim, onClick, selected, title }: Props) {
+export default function LottoBall({ n, size = 'md', bonus, dim, onClick, selected, title, hits = 0 }: Props) {
   const tone = ballTone(n);
   const bg = BALL_HEX[tone];
   const fg = tone === 'yellow' || tone === 'green' ? '#1a1a19' : '#ffffff';
@@ -23,7 +25,9 @@ export default function LottoBall({ n, size = 'md', bonus, dim, onClick, selecte
   } ${selected ? 'ring-2 ring-offset-1 ring-neutral-900 dark:ring-white dark:ring-offset-neutral-900' : ''} ${
     onClick ? 'cursor-pointer hover:scale-105 transition' : ''
   }`;
-  const style = { backgroundColor: bg, color: fg };
+  const shadow = hitRingShadow(hits);
+  const style = { backgroundColor: bg, color: fg, ...(shadow ? { boxShadow: shadow } : {}) };
+  const hitAttr = hits > 0 ? { 'data-hits': hits } : {};
   const label = bonus ? `보너스 ${n}` : `${n}`;
   if (onClick) {
     return (
@@ -36,13 +40,14 @@ export default function LottoBall({ n, size = 'md', bonus, dim, onClick, selecte
         aria-label={label}
         title={title}
         data-tone={tone}
+        {...hitAttr}
       >
         {n}
       </button>
     );
   }
   return (
-    <span className={cls} style={style} aria-label={label} title={title} data-tone={tone}>
+    <span className={cls} style={style} aria-label={label} title={title} data-tone={tone} {...hitAttr}>
       {n}
     </span>
   );
@@ -67,16 +72,19 @@ export function BallRow({
   bonus,
   size = 'md',
   pastWins,
+  hits,
 }: {
   numbers: number[];
   bonus?: number | null;
   size?: Props['size'];
   pastWins?: PastWin[] | null;
+  /** S5.10 번호 → 최근 6회차 1등 번호 출현 횟수 (선택된 티켓에만 전달) */
+  hits?: Record<number, number>;
 }) {
   return (
     <span className="inline-flex items-center gap-1">
       {numbers.map((n) => (
-        <LottoBall key={n} n={n} size={size} />
+        <LottoBall key={n} n={n} size={size} hits={hits?.[n] ?? 0} title={hits?.[n] ? `${n} — 최근 6회차 1등 번호에 ${hits[n]}회 출현` : undefined} />
       ))}
       {bonus != null && (
         <>

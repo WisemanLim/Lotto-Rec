@@ -43,3 +43,9 @@ def test_config_exposes_fixed_prize_defaults() -> None:
     assert body["lotto_prize_rank4_default"] == 50_000
     assert body["lotto_prize_rank5_default"] == 5_000
     assert body["lotto_prize_rank3_default"] > 0
+
+
+def test_config_exposes_lottery_pick_count() -> None:
+    """S5.5 (v1.21): 추첨 시도 선택 개수 기본값(.env LOTTO_LOTTERY_PICK_COUNT, 기본 5)을 프론트에 전달."""
+    body = client.get("/api/v1/config").json()
+    assert 1 <= body["lotto_lottery_pick_count"] <= 50

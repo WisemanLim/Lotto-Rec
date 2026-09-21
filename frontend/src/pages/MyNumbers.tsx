@@ -9,6 +9,8 @@ import Term from '../components/Term';
 import { Empty, ErrorBox, Field, FormSlot, Loading, PageTitle, Section, btnCls, btnDangerCls, btnGhostCls, inputCls } from '../components/States';
 import { fmtDate, fmtNum, fmtP, fmtWon } from '../lib/format';
 import { pickPositions, type LotteryPick } from '../lib/lottery';
+import { RECENT_CHIPS } from '../components/RecentDrawChips';
+import { hitRingShadow } from '../lib/colors';
 
 const NUMS = Array.from({ length: 45 }, (_, i) => i + 1);
 
@@ -91,9 +93,24 @@ export default function MyNumbers() {
   const nextDraw = (summary.data?.max_draw ?? 0) + 1;
   // S5.5 등록된 번호로 추첨 시도 — 1..N(저장 개수) 무작위 빈도 규칙, 화면 상태만(DB 저장 없음)
   const [lottery, setLottery] = useState<{ pick: LotteryPick; ids: Set<number> } | null>(null);
+  // S5.10 최근 6회차 1등 본번호 출현 횟수 (S1.7 과 같은 6회차·같은 캐시 키), ★ 티켓 번호에 테두리 표시
+  const recent6 = useQuery({
+    queryKey: ['data', 'draws', 'recent-chips', RECENT_CHIPS],
+    queryFn: () => api.data.draws({ limit: RECENT_CHIPS, order: 'desc' }),
+  });
+  const hitCounts: Record<number, number> = {};
+  for (const d of Array.isArray(recent6.data) ? recent6.data : []) for (const n of d.numbers) hitCounts[n] = (hitCounts[n] ?? 0) + 1;
+  // ★ 선택 티켓을 상단으로 (표시 전용 — 위치 추첨의 기준 순서는 원래 목록)
+  const shownTickets = lottery ? [...(tickets.data ?? [])].sort((a, b) => Number(lottery.ids.has(b.ticket_id)) - Number(lottery.ids.has(a.ticket_id))) : (tickets.data ?? []);
+  // v1.21 선택 개수: .env LOTTO_LOTTERY_PICK_COUNT(/config, 기본 5)가 초깃값, 입력 박스로 세션 단위 수정 (null = 기본값 사용)
+  const defaultPick = config.data?.lotto_lottery_pick_count ?? 5;
+  const [pickInput, setPickInput] = useState<string | null>(null);
+  const pickText = pickInput ?? String(defaultPick);
+  const pickCount = Number(pickText);
+  const pickValid = pickText.trim() !== '' && Number.isInteger(pickCount) && pickCount >= 1 && pickCount <= 50;
   const tryLottery = () => {
     const list = tickets.data ?? [];
-    const pick = pickPositions(list.length, 5, nextDraw);
+    const pick = pickPositions(list.length, pickCount, nextDraw);
     setLottery({ pick, ids: new Set(pick.selected.map((pos) => list[pos - 1].ticket_id)) });
   };
 
@@ -200,11 +217,24 @@ export default function MyNumbers() {
               </label>
             )}
           <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
+          <label className="inline-flex items-center gap-1 text-xs">
+            선택 개수
+            <input
+              type="number"
+              min={1}
+              max={50}
+              aria-label="추첨 선택 개수"
+              title="★ 로 선택할 번호(티켓) 개수 — 기본값은 .env LOTTO_LOTTERY_PICK_COUNT (세션 단위 수정)"
+              className={`${inputCls} !w-14 !px-2 !py-1 text-center`}
+              value={pickText}
+              onChange={(e) => setPickInput(e.target.value)}
+            />
+          </label>
           <button
             type="button"
             className={`${btnCls} shrink-0 !px-2 bg-emerald-700 hover:bg-emerald-800`}
-            disabled={!tickets.data?.length}
-            title={`1..N(저장된 번호 ${tickets.data?.length ?? 0}개) 중 5개 무작위 추출 × 다음 회차 ${nextDraw}회 → 빈도 상위 5 위치를 ★ 표시 (화면 표시만, 저장 없음)`}
+            disabled={!tickets.data?.length || !pickValid}
+            title={pickValid ? `1..N(저장된 번호 ${tickets.data?.length ?? 0}개) 중 ${pickCount}개 무작위 추출 × 다음 회차 ${nextDraw}회 → 빈도 상위 ${pickCount} 위치를 ★ 표시 (화면 표시만, 저장 없음)` : '선택 개수는 1~50 의 정수여야 합니다'}
             onClick={tryLottery}
           >
             등록된 번호로 추첨 시도
@@ -241,10 +271,25 @@ export default function MyNumbers() {
           </p>
         )}
         {lottery && (
-          <p className="mb-2 text-xs text-emerald-800 dark:text-emerald-200" role="status" aria-label="추첨 시도 결과">
-            추첨 시도 — {lottery.pick.rounds.toLocaleString()}회 반복(1..{lottery.pick.pool} 중 {lottery.pick.pick}개) · 선택 위치{' '}
-            <span className="font-semibold tabular-nums">{lottery.pick.selected.join(', ')}</span> · ★ {lottery.ids.size}장 (화면 표시만, 저장되지 않음)
-          </p>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-x-6 gap-y-1" aria-label="추첨 시도 안내">
+          {lottery && Object.keys(hitCounts).length > 0 && (
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-neutral-600 dark:text-neutral-300" aria-label="최근 6회차 출현 테두리 범례">
+              <span>★ 번호 테두리 = 최근 {RECENT_CHIPS}회차 1등 번호 출현 횟수:</span>
+              {[1, 2, 3, 4, 5, 6].map((c) => (
+                <span key={c} className="inline-flex items-center gap-1.5">
+                  <span className="inline-block h-3 w-3 rounded-full bg-neutral-300 dark:bg-neutral-600" style={{ boxShadow: hitRingShadow(c) }} aria-hidden />
+                  {c}회
+                </span>
+              ))}
+            </p>
+          )}
+          {lottery && (
+            <p className="ml-auto text-xs text-emerald-800 dark:text-emerald-200" role="status" aria-label="추첨 시도 결과">
+              추첨 시도 — {lottery.pick.rounds.toLocaleString()}회 반복(1..{lottery.pick.pool} 중 {lottery.pick.pick}개) · 선택 위치{' '}
+              <span className="font-semibold tabular-nums">{lottery.pick.selected.join(', ')}</span> · ★ {lottery.ids.size}장 (화면 표시만, 저장되지 않음)
+            </p>
+          )}
+          </div>
         )}
         {tickets.isLoading && <Loading />}
         {tickets.isError && <ErrorBox error={tickets.error} />}
@@ -256,9 +301,9 @@ export default function MyNumbers() {
           </Empty>
         )}
         <div className="space-y-2">
-          {tickets.data?.map((t: UserTicket) => (
+          {shownTickets.map((t: UserTicket) => (
             <div key={t.ticket_id} className="flex flex-wrap items-center gap-3 rounded-md border border-neutral-200 p-3 text-sm dark:border-neutral-700">
-              <BallRow numbers={t.numbers} bonus={t.bonus} size="sm" />
+              <BallRow numbers={t.numbers} bonus={t.bonus} size="sm" hits={lottery?.ids.has(t.ticket_id) ? hitCounts : undefined} />
               {(t.duplicate || (t.dup_count ?? 1) > 1 || (t.same_number_ticket_ids?.length ?? 0) > 0) && (
                 <Term id="duplicate_ticket">
                   <span

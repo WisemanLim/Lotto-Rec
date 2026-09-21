@@ -60,10 +60,11 @@ test('타이틀 우측 최근 N회차(.env) 당첨번호 + 대상 회차/시도 
   expect(items[RECENT_N - 1].textContent).toMatch(/^1239회/);
   // 1241회: 1 11 21 31 41 45 + 보너스 7 → 공 7개
   expect(within(items[0]).getAllByText(/^(1|11|21|31|41|45|7)$/)).toHaveLength(7);
-  // /config 의 회차 수로 1회만 요청(상수 5 로 선요청 없음)
-  expect(drawUrls).toHaveLength(1);
-  expect(drawUrls[0]).toMatch(new RegExp(`limit=${RECENT_N}`));
-  expect(drawUrls[0]).toMatch(/order=desc/);
+  // 표시용 목록은 /config 의 회차 수로 1회만 요청(상수 5 로 선요청 없음). 추가로 S5.10 출현 횟수용 6회차 조회(limit=6)가 있다.
+  const display = drawUrls.filter((u) => u.includes(`limit=${RECENT_N}`));
+  expect(display).toHaveLength(1);
+  expect(display[0]).toMatch(/order=desc/);
+  expect(drawUrls.filter((u) => !u.includes(`limit=${RECENT_N}`)).every((u) => /limit=6/.test(u))).toBe(true);
   // 헤더 좌측 그룹 = 타이틀 + 최근 당첨번호
   const heading = screen.getByRole('heading', { level: 2, name: /저장된 번호 \(대상 1242회\)/ });
   expect(heading.parentElement).toBe(list.parentElement);

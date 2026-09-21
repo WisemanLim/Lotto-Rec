@@ -86,6 +86,7 @@ LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all   # honcho �
 | `LOTTO_RUN_RETENTION` | 20 | 분석 run 보존 개수(0=무제한). 군별 최신·활성 실험 참조 run 은 보존 |
 | `LOTTO_CROSS_DRAW_LAG` | 5 | **회차간 교차 공출현 전/후 간격 L**(1–50). lag 1..L 개별 + 창 합산 분석, 경계 회차(앞·뒤 L 회)는 간격 내 가능한 쌍만 포함. 변경 후 `make local-restart` → 새 분석 run(또는 `make reanalyze`). 현재 값은 `GET /config`·설정 화면에서 확인, 회차간 연관성 화면이 run 의 L 과 다르면 안내 |
 | `LOTTO_RECENT_DRAWS` | 5 | 내 번호 '저장된 번호' 타이틀 우측 **최근 당첨번호 회차 수**(1–20, S5.8). `/config` `lotto_recent_draws` 로 노출. local 은 **저장 즉시 자동 반영**(uvicorn 이 `.env.local` 감시), docker 는 `make docker-restart` |
+| `LOTTO_LOTTERY_PICK_COUNT` | 5 | 내 번호 '등록된 번호로 추첨 시도'(S5.5)의 ★ 선택 개수 기본값(1–50). `/config` `lotto_lottery_pick_count` 로 노출, 화면 '선택 개수' 입력 박스로 세션 단위 수정 |
 | `LOTTO_PRIZE_RANK3_DEFAULT` / `_RANK4_` / `_RANK5_` | 1500000 / 50000 / 5000 | 4·5등 고정 당첨금, 3등은 회차에 실제 값(총액÷당첨게임 수)이 없을 때의 기본값(성과추적; `/config` 로 결과 입력 화면에 전달) |
 | `DATABASE_URL` | `sqlite:///./data/lotto.db` | 루트 기준 상대경로 → 절대경로 자동 변환 |
 | `LOTTO_BACKEND_PORT` / `LOTTO_FRONTEND_PORT` | 8000 / 5173 | 127.0.0.1 바인딩 |
@@ -164,6 +165,8 @@ curl -s localhost:8000/api/v1/analysis/runs/<run_id>/summary | jq .kpi
 | impl/18th | S5.6 내 번호 **★ 중복 ×n 표시** — 같은 번호·회차 등록은 병합(`user_ticket.dup_count/dup_labels`, Alembic 5b12a3e1), 다른 회차 동일 번호는 `same_number_ticket_ids` 로 묶음, 자동 등록 skip→merge, 용어 `duplicate_ticket`(중복 생성 ≠ 유의성 증거) | PASS 8/8 (pytest 63, vitest 35) |
 | impl/19th | 버그 수정 — 내 번호 보너스 포함 평가 시 백색 화면(스코어카드 `bonus` dict → int, `bonus_info` 분리, ScorecardView 방어 렌더) | PASS 4/4 (pytest 63, vitest 37) |
 | impl/20th | 버그 수정 — `.env.local` 값 미적용(pydantic-settings `env_file` 뒤 파일 우선 → example 이 덮어씀; 순서 example → `.env` → `.env.local` 로 수정, 우선순위 회귀 테스트) | PASS 6/6 (pytest 65, vitest 37) |
+| impl/39th | v1.21 **추첨 개수 `.env` 관리** — `LOTTO_LOTTERY_PICK_COUNT`(기본 5) + '등록된 번호로 추첨 시도' 앞 입력 박스, 추첨 시도 결과 문구를 테두리 범례 우측 같은 줄로 | PASS 5/5 (pytest 91, vitest 70) |
+| impl/38th | S5.10 **추첨 시도 표시 개선** — ★ 티켓 목록 상단 정렬, ★ 티켓 번호 중 최근 6회차 1등 번호와 겹치는 번호에 출현 횟수별 테두리(흰 안쪽 링 + 1회 검정/2회 노랑/3회 파랑/4회 빨강/5회 회색/6회 초록) + 범례 | PASS 6/6 (vitest 66) |
 | impl/37th | v1.19 **방어 코드** — 추천 초기화·내 번호 초기화·추천 자동 등록은 결과가 입력되지 않은 진행 예정 회차에서만(API 400, 버튼 비활성+사유 툴팁), 성과 추적의 중복 '추첨 결과 입력 / 업로드' 섹션 주석 처리로 숨김 | PASS 8/8 |
 | impl/36th | S1.7 **결과 입력 옆 과거 6회차 요약** — '추첨 결과 직접 입력' 제목 우측 회차 칩(1242…1237), 마우스 오버/포커스 툴팁 표(당첨번호·등위별 총 당첨금·당첨게임 수·1게임당 당첨금), 기존 `GET /data/draws` 재사용 | PASS 5/5 (vitest 59) |
 | impl/35th | S1.6 v1.17 **등위별 총 당첨금 입력·자동계산** — 1~3등 총액÷당첨게임 수 → 1게임당 당첨금, 4·5등 고정값(50,000·5,000) 유지, 등수 5열 전폭 표, 데이터 요약 강조·입력/업로드 패널 구분, 업로드 안내 문구 버튼 우측 | PASS 7/7 (vitest 56) |

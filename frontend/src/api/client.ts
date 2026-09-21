@@ -81,6 +81,7 @@ export interface AppConfig {
   lotto_min_effect_delta?: number;
   lotto_run_retention?: number;
   lotto_recent_draws?: number;
+  lotto_lottery_pick_count?: number;
   lotto_prize_rank3_default?: number;
   lotto_prize_rank4_default?: number;
   lotto_prize_rank5_default?: number;

@@ -77,3 +77,18 @@ export const BALL_HEX: Record<BallTone, string> = {
   gray: '#aaaaaa',
   green: '#b0d840',
 };
+
+/**
+ * S5.10 최근 6회차 1등 번호 출현 횟수별 테두리 색: 1회 검정, 2회 1~10번 색, 3회 11~20번, 4회 21~30번, 5회 31~40번, 6회 41번 이상.
+ * 공 색과 구별되도록 흰색 안쪽 테두리를 먼저 두른 뒤 바깥에 색 테두리를 추가한다 (box-shadow 이중 링).
+ */
+export function hitRingColor(count: number): string | null {
+  if (count < 1) return null;
+  if (count === 1) return '#000000';
+  const rep = [5, 15, 25, 35, 45][Math.min(count, 6) - 2];
+  return BALL_HEX[ballTone(rep)];
+}
+export function hitRingShadow(count: number): string | undefined {
+  const c = hitRingColor(count);
+  return c ? `0 0 0 2px #ffffff, 0 0 0 4px ${c}` : undefined;
+}
