@@ -52,3 +52,11 @@ def test_auto_register_selects_and_registers(seeded: None, client, monkeypatch) 
     # seed 미지정 → 응답에 seed 포함
     res3 = client.post("/api/v1/recommend/auto-register", json={}).json()
     assert isinstance(res3["seed"], int) and len(res3["selected"]) == 5
+
+
+def test_auto_register_rejected_for_completed_draw(seeded: None, client) -> None:  # noqa: ANN001
+    """v1.19: 결과가 입력된 회차(≤ 최신 결과 회차)는 자동 등록 거부(400)."""
+    latest = client.get("/api/v1/user/tickets/draws").json()["latest_result_draw"]
+    for t in (1, latest):
+        r = client.post("/api/v1/recommend/auto-register", json={"target_draw_no": t, "seed": 1})
+        assert r.status_code == 400 and "결과가 입력된 회차" in r.json()["detail"]

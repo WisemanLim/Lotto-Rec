@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -94,6 +95,28 @@ def ticket_draws(session: Session = Depends(get_session)) -> dict:
         "reason": reason,
         "draws": draws,
     }
+
+
+@router.delete("/tickets")
+def reset_tickets(
+    target_draw_no: int = Query(..., ge=1, description="초기화할 대상 회차 (필수)"),
+    session: Session = Depends(get_session),
+) -> dict:
+    """S5.9 내 번호 초기화 — 진행 예정 회차의 내 번호만 삭제. 결과가 입력된 회차는 400 (v1.19)."""
+    latest = max_draw_no(session) or 0
+    if target_draw_no <= latest:
+        msg = f"{target_draw_no}회는 결과가 입력된 회차라 내 번호를 초기화할 수 없습니다 (진행 예정 회차만 가능)"
+        raise HTTPException(400, msg)
+    ids = list(session.scalars(select(UserTicket.ticket_id).where(UserTicket.target_draw_no == target_draw_no)))
+    n_out = 0
+    if ids:
+        res = session.execute(
+            sa_delete(TicketOutcome).where(TicketOutcome.source == "user", TicketOutcome.ticket_ref.in_(ids))
+        )
+        n_out = getattr(res, "rowcount", 0)
+        session.execute(sa_delete(UserTicket).where(UserTicket.ticket_id.in_(ids)))
+    session.commit()
+    return {"target_draw_no": target_draw_no, "deleted_tickets": len(ids), "deleted_outcomes": int(n_out or 0)}
 
 
 @router.delete("/tickets/{ticket_id}")

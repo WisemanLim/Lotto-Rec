@@ -1,6 +1,8 @@
 [
  "DELETE /api/v1/analysis/runs/{run_id}",
  "DELETE /api/v1/experiments/runs/{experiment_id}",
+ "DELETE /api/v1/recommend/history",
+ "DELETE /api/v1/user/tickets",
  "DELETE /api/v1/user/tickets/{ticket_id}",
  "GET /api/v1/analysis/runs",
  "GET /api/v1/analysis/runs/latest",
@@ -19,6 +21,7 @@
  "GET /api/v1/recommend/history",
  "GET /api/v1/recommend/history/summary",
  "GET /api/v1/recommend/strategies",
+ "GET /api/v1/tracking/consistency",
  "GET /api/v1/tracking/outcomes",
  "GET /api/v1/tracking/outcomes/summary",
  "GET /api/v1/tracking/pending",

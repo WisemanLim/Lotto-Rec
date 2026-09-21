@@ -37,5 +37,8 @@ def get_config() -> dict[str, object]:
         "lotto_min_effect_delta": settings.lotto_min_effect_delta,
         "lotto_run_retention": settings.lotto_run_retention,
         "lotto_recent_draws": settings.lotto_recent_draws,
+        "lotto_prize_rank3_default": settings.lotto_prize_rank3_default,
+        "lotto_prize_rank4_default": settings.lotto_prize_rank4_default,
+        "lotto_prize_rank5_default": settings.lotto_prize_rank5_default,
         "timezone": settings.lotto_timezone,
     }

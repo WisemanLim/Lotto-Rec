@@ -245,6 +245,16 @@ function RecommendResultSection({ res, alpha, titlePrefix = '추천 결과' }: {
   );
 }
 
+// v1.19: 해당 회차에 저장된 사용자 생성 추천 장수 (초기화·자동 등록 버튼 활성 판단)
+function useUpcomingCount(d: number | null) {
+  return useQuery({
+    queryKey: ['recommend', 'history-summary', 'upcoming', d],
+    queryFn: () => api.recommend.historySummary({ origin: 'user', target_draw_no: d as number }),
+    enabled: d !== null,
+    select: (x) => x.total_filtered,
+  });
+}
+
 export default function Recommend() {
   const qc = useQueryClient();
   const { run } = useRun();
@@ -271,10 +281,36 @@ export default function Recommend() {
     queryKey: ['recommend', 'history-summary', hFilter],
     queryFn: () => api.recommend.historySummary(hFilter),
   });
+  // v1.19 방어: 초기화·자동 등록은 결과가 입력되지 않은 진행 예정 회차에서만 (최신 결과 회차 + 1 이상, 저장된 사용자 추천이 있을 때)
+  const dataSummary = useQuery({ queryKey: ['data', 'summary'], queryFn: api.data.summary });
+  const latestResult = typeof dataSummary.data?.max_draw === 'number' ? dataSummary.data.max_draw : null;
+  const nextDraw = latestResult === null ? null : latestResult + 1;
+  const autoDraw = hTarget ? Number(hTarget) : nextDraw; // 자동 등록 대상 회차
+  const nextCount = useUpcomingCount(nextDraw);
+  const autoCount = useUpcomingCount(autoDraw);
+  const resetBlock =
+    nextDraw === null ? '회차 정보를 불러오는 중입니다' : nextCount.data === 0 ? `진행 예정 ${nextDraw}회에 저장된 추천이 없습니다` : null;
+  const autoBlock =
+    autoDraw === null || latestResult === null
+      ? '회차 정보를 불러오는 중입니다'
+      : autoDraw <= latestResult
+        ? `${autoDraw}회는 결과가 입력된 회차입니다 — 진행 예정 회차에서만 자동 등록할 수 있습니다`
+        : autoCount.data === 0
+          ? `${autoDraw}회에 저장된 추천이 없습니다`
+          : null;
   // S4.10 내 번호로 자동 등록 — 1..P 중 5개 무작위 추출을 대상 회차 수만큼 반복 → 빈도 상위 5 위치 → 전략별 최신 batch 티켓 등록
   const autoReg = useMutation({
     mutationFn: () => api.recommend.autoRegister({ target_draw_no: hTarget ? Number(hTarget) : undefined }),
     onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['user'] });
+      void qc.invalidateQueries({ queryKey: ['tracking'] });
+    },
+  });
+  // S4.12 추천 초기화 — 현재 회차(최신 회차 + 1)의 사용자 생성 추천 삭제
+  const resetRec = useMutation({
+    mutationFn: () => api.recommend.reset(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['recommend'] });
       void qc.invalidateQueries({ queryKey: ['user'] });
       void qc.invalidateQueries({ queryKey: ['tracking'] });
     },
@@ -493,7 +529,7 @@ export default function Recommend() {
           )
         }
       >
-        <div className="mb-3 grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-7" role="group" aria-label="추천 이력 필터">
+        <div className="mb-3 grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(5,minmax(0,1fr))_auto]" role="group" aria-label="추천 이력 필터">
           <Field label="출처" hint="검증 replay 티켓은 시뮬레이션">
             <select className={inputCls} value={hOrigin} onChange={(e) => setHOrigin(e.target.value as 'user' | 'backtest' | 'all')} aria-label="출처 필터">
               <option value="user">사용자 생성{historySummary.data?.by_origin?.user != null ? ` (${historySummary.data.by_origin.user})` : ''}</option>
@@ -540,10 +576,10 @@ export default function Recommend() {
               <option value={50000}>전체</option>
             </select>
           </Field>
-          <FormSlot>
+          <FormSlot className="whitespace-nowrap">
             <button
               type="button"
-              className={`${btnCls} bg-neutral-600 hover:bg-neutral-700`}
+              className={`${btnCls} shrink-0 !px-2 bg-neutral-600 hover:bg-neutral-700`}
               onClick={() => {
                 setHStrategy('');
                 setHTarget('');
@@ -554,13 +590,11 @@ export default function Recommend() {
             >
               필터 초기화
             </button>
-          </FormSlot>
-          <FormSlot>
             <button
               type="button"
-              className={`${btnCls} bg-emerald-700 hover:bg-emerald-800`}
-              title="1..P 중 5개 무작위 추출 × 대상 회차 수 → 빈도 상위 5 위치의 전략별 최신 티켓 등록"
-              disabled={autoReg.isPending}
+              className={`${btnCls} shrink-0 !px-2 bg-emerald-700 hover:bg-emerald-800`}
+              title={autoBlock ?? '1..P 중 5개 무작위 추출 × 대상 회차 수 → 빈도 상위 5 위치의 전략별 최신 티켓 등록 (진행 예정 회차만)'}
+              disabled={autoReg.isPending || autoBlock !== null}
               onClick={() => {
                 const d = hTarget ? `${hTarget}회` : '최신 회차 + 1';
                 if (window.confirm(`대상 회차 ${d} 의 전략별 최신 추천 티켓 중 무작위 빈도 상위 5개 위치를 내 번호로 등록할까요?\n이미 등록된 번호는 새 행 없이 ★ 중복(×n)으로 병합됩니다.`))
@@ -569,8 +603,26 @@ export default function Recommend() {
             >
               {autoReg.isPending ? '등록 중…' : '내 번호로 자동 등록'}
             </button>
+            <button
+              type="button"
+              className={`${btnCls} shrink-0 !px-2 bg-red-700 hover:bg-red-800`}
+              title={resetBlock ?? '진행 예정 회차(최신 회차 + 1)에 저장된 사용자 생성 추천 티켓을 모두 삭제 (결과가 입력된 이전 회차·검증 replay 는 유지)'}
+              disabled={resetRec.isPending || resetBlock !== null}
+              onClick={() => {
+                if (window.confirm('현재 회차(최신 회차 + 1)에 저장된 추천 티켓을 모두 삭제할까요?\n검증 replay 와 다른 회차 추천은 유지되며, 되돌릴 수 없습니다.'))
+                  resetRec.mutate();
+              }}
+            >
+              {resetRec.isPending ? '초기화 중…' : '추천 초기화'}
+            </button>
           </FormSlot>
         </div>
+        {resetRec.isError && <ErrorBox error={resetRec.error} />}
+        {resetRec.data && (
+          <p className="mb-2 text-xs text-red-800 dark:text-red-200" role="status" aria-label="추천 초기화 결과">
+            {resetRec.data.target_draw_no}회 추천 {resetRec.data.deleted_recommendations.toLocaleString()}장을 초기화했습니다.
+          </p>
+        )}
         {autoReg.isError && <ErrorBox error={autoReg.error} />}
         {autoReg.data && <AutoRegisterSummary r={autoReg.data} />}
         {history.isLoading && <Loading />}

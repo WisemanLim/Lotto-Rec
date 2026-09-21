@@ -7,6 +7,7 @@ from scipy import stats
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core import consistency
 from app.core.config import settings
 from app.core.null_model import GAME
 from app.core.recommend.scorecard import hypergeom_match_var
@@ -34,12 +35,15 @@ def prize_for(rank: int, draw: Draw) -> int:
         return int(draw.prize1 or 0)
     if rank == 2:
         return int(draw.prize2 or 0)
-    if rank == 3:
-        return settings.lotto_prize_rank3_default
-    if rank == 4:
-        return settings.lotto_prize_rank4_default
-    if rank == 5:
-        return settings.lotto_prize_rank5_default
+    # 3~5등: 회차에 실제 1게임당 당첨금(S1.6)이 있으면 그 값, 없으면 env 기본값
+    defaults = {
+        3: settings.lotto_prize_rank3_default,
+        4: settings.lotto_prize_rank4_default,
+        5: settings.lotto_prize_rank5_default,
+    }
+    if rank in defaults:
+        actual = getattr(draw, f"prize{rank}", None)
+        return int(actual) if actual else defaults[rank]
     return 0
 
 
@@ -324,3 +328,30 @@ def outcomes_summary(
         "by_source": by_source,
         "by_origin": by_origin,
     }
+
+
+def recommendation_consistency(
+    session: Session, *, origin: str = "user", source: str = "recommendation", strategy: str | None = None
+) -> dict:
+    """S8.7 추천 티켓 전체(기본 source=recommendation) vs 실제 결과 정합성 분석."""
+    o = TicketOutcome
+    stmt = select(o.strategy, o.draw_no, o.ticket, o.main_matches, o.rank)
+    if source != "all":
+        stmt = stmt.where(TicketOutcome.source == source)
+    if origin != "all":
+        stmt = stmt.where(TicketOutcome.origin == origin)
+    if strategy:
+        stmt = stmt.where(TicketOutcome.strategy == strategy)
+    rows_by: dict[str, list[tuple[int, list[int], int, int]]] = {}
+    draw_nos: set[int] = set()
+    for st, d, tk, m, r in session.execute(stmt).all():
+        rows_by.setdefault(st, []).append((int(d), list(tk), int(m), int(r)))
+        draw_nos.add(int(d))
+    winners = {
+        d.draw_no: set(d.numbers)
+        for d in session.scalars(select(Draw).where(Draw.draw_no.in_(draw_nos))).all()
+    } if draw_nos else {}
+    latest = session.scalar(select(func.max(Draw.draw_no)))
+    res = consistency.analyze(rows_by, winners, alpha=settings.lotto_significance_level, latest_draw=latest)
+    res.update({"origin": origin, "source": source, "latest_draw": latest})
+    return res

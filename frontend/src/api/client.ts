@@ -81,6 +81,9 @@ export interface AppConfig {
   lotto_min_effect_delta?: number;
   lotto_run_retention?: number;
   lotto_recent_draws?: number;
+  lotto_prize_rank3_default?: number;
+  lotto_prize_rank4_default?: number;
+  lotto_prize_rank5_default?: number;
   timezone?: string;
 }
 
@@ -132,6 +135,12 @@ export interface Draw {
   winners1: number | null;
   prize2: number | null;
   winners2: number | null;
+  prize3: number | null;
+  winners3: number | null;
+  prize4: number | null;
+  winners4: number | null;
+  prize5: number | null;
+  winners5: number | null;
   cohort: 'A' | 'B';
 }
 
@@ -143,6 +152,12 @@ export interface DrawIn {
   winners1?: number | null;
   prize2?: number | null;
   winners2?: number | null;
+  prize3?: number | null;
+  winners3?: number | null;
+  prize4?: number | null;
+  winners4?: number | null;
+  prize5?: number | null;
+  winners5?: number | null;
   overwrite?: boolean;
 }
 
@@ -1055,6 +1070,34 @@ export interface TicketDraws {
 // ---------- 성과 추적 ----------
 export type Origin = 'user' | 'backtest';
 
+export interface ConsistencyStrategy {
+  n_tickets: number;
+  n_draws: number;
+  insufficient: boolean;
+  rank_dist: { rank: number; observed: number; expected: number; share: number; expected_share: number; p: number; q?: number }[];
+  match_gof: { stat: number | null; df: number; p: number | null; bins: number; q?: number };
+  number_corr: { mean_r: number | null; n_draws: number; t: number | null; p: number | null; q?: number; per_draw: { draw_no: number; r: number }[] };
+  pair_corr: { pairs: number; hits: number; expected_hits: number; p0: number; mean_excess_rate: number | null; n_draws: number; t: number | null; p: number | null; q?: number };
+  min_q: number | null;
+  verdict: 'consistent' | 'deviation' | 'insufficient';
+}
+
+export interface ConsistencyReport {
+  alpha: number;
+  n_tests: number;
+  origin: string;
+  source: string;
+  latest_draw: number | null;
+  strategies: Record<string, ConsistencyStrategy>;
+  feedback: {
+    summary: string;
+    n_deviation: number;
+    actions: string[];
+    next_experiment: { strategy: string; tune_to: number | null; note: string }[];
+  };
+  policy: string;
+}
+
 export interface TrackingSummary {
   strategies: Record<string, StrategyPerf>;
   comparison_vs_uniform: Record<string, ComparisonVsUniform>;
@@ -1068,6 +1111,17 @@ export interface PendingInfo {
   recommendations: number;
   user_tickets: number;
   target_draws: number[];
+}
+
+export interface ResetRecommendResult {
+  target_draw_no: number;
+  deleted_recommendations: number;
+  deleted_outcomes: number;
+}
+export interface ResetTicketsResult {
+  target_draw_no: number;
+  deleted_tickets: number;
+  deleted_outcomes: number;
 }
 
 export const api = {
@@ -1115,6 +1169,9 @@ export const api = {
     historySummary: (params?: Omit<RecommendHistoryParams, 'limit' | 'offset'>) =>
       get<RecommendHistorySummary>('/api/v1/recommend/history/summary', params),
     autoRegister: (body: AutoRegisterIn) => post<AutoRegisterResult>('/api/v1/recommend/auto-register', body),
+    // S4.12 현재 회차(미지정 시 최신+1)의 사용자 생성 추천 초기화
+    reset: (targetDrawNo?: number) =>
+      del<ResetRecommendResult>(`/api/v1/recommend/history${targetDrawNo ? `?target_draw_no=${targetDrawNo}` : ''}`),
   },
 
   experiments: {
@@ -1136,10 +1193,14 @@ export const api = {
       get<UserTicket[]>('/api/v1/user/tickets', { limit, target_draw_no: targetDrawNo ?? undefined }),
     ticketDraws: () => get<TicketDraws>('/api/v1/user/tickets/draws'),
     remove: (ticketId: number) => del<unknown>(`/api/v1/user/tickets/${ticketId}`),
+    // S5.9 해당 대상 회차의 내 번호 초기화
+    reset: (targetDrawNo: number) => del<ResetTicketsResult>(`/api/v1/user/tickets?target_draw_no=${targetDrawNo}`),
   },
 
   tracking: {
     summary: (origin?: Origin) => get<TrackingSummary>('/api/v1/tracking/summary', { origin }),
+    // S8.7 추천 정합성 분석
+    consistency: (origin: Origin | 'all' = 'user') => get<ConsistencyReport>('/api/v1/tracking/consistency', { origin }),
     outcomes: (params?: OutcomeParams) => get<Outcome[]>('/api/v1/tracking/outcomes', params),
     outcomesSummary: (params?: Omit<OutcomeParams, 'limit' | 'offset'>) =>
       get<OutcomeSummary>('/api/v1/tracking/outcomes/summary', params),

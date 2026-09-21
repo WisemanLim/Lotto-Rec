@@ -6,7 +6,7 @@ import secrets
 import uuid
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -14,7 +14,7 @@ from app.core.null_model import GAME
 from app.core.recommend import strategies as strat
 from app.core.recommend.scorecard import scorecard
 from app.core.timeutil import to_iso
-from app.db.models import Recommendation, UserTicket
+from app.db.models import Recommendation, TicketOutcome, UserTicket
 from app.services import analysis_service as asvc
 from app.services import experiment_service as xsvc
 from app.services.draws import DrawSet, load_draws, max_draw_no
@@ -282,6 +282,9 @@ def auto_register(
     전략별 최신 batch 티켓을 내 번호로 등록. 동일 번호·대상 회차가 이미 있으면 병합(S5.6, dup_count↑)."""
     ctx = build_context(session)
     target = target_draw_no or ctx.draw_no_next
+    latest_result = max_draw_no(session) or 0
+    if target <= latest_result:  # v1.19: 결과가 입력된 회차는 자동 등록 불가 (진행 예정 회차만)
+        raise ValueError(f"{target}회는 결과가 입력된 회차라 자동 등록할 수 없습니다 (진행 예정 회차만 가능)")
     pool = settings.lotto_number_recommendation_count
     pick = min(pick, pool)
     if seed is None:
@@ -366,6 +369,33 @@ def _history_stmt(origin: str, strategy: str | None, batch_id: str | None, targe
     if target_draw_no:
         stmt = stmt.where(Recommendation.target_draw_no == target_draw_no)
     return stmt
+
+
+def reset_recommendations(session: Session, target_draw_no: int | None = None) -> dict:
+    """S4.12 진행 예정 회차(미지정 시 최신 회차 + 1)의 사용자 생성(origin=user) 추천 초기화.
+
+    결과가 입력된 회차(≤ 최신 결과 회차)는 ValueError (API 400) — 이미 성과 추적 대상인 이전 회차 보호 (v1.19).
+    """
+    latest = max_draw_no(session) or 0
+    target = target_draw_no or latest + 1
+    if target <= latest:
+        raise ValueError(f"{target}회는 결과가 입력된 회차라 추천을 초기화할 수 없습니다 (진행 예정 회차만 가능)")
+    ids = list(
+        session.scalars(
+            select(Recommendation.rec_id).where(
+                Recommendation.origin == "user", Recommendation.target_draw_no == target
+            )
+        )
+    )
+    n_out = 0
+    if ids:
+        res = session.execute(
+            delete(TicketOutcome).where(TicketOutcome.source == "recommendation", TicketOutcome.ticket_ref.in_(ids))
+        )
+        n_out = getattr(res, "rowcount", 0)
+        session.execute(delete(Recommendation).where(Recommendation.rec_id.in_(ids)))
+    session.commit()
+    return {"target_draw_no": target, "deleted_recommendations": len(ids), "deleted_outcomes": int(n_out or 0)}
 
 
 def list_recommendations(

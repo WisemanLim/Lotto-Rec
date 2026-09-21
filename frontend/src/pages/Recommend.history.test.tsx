@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import Recommend from './Recommend';
@@ -10,6 +10,7 @@ function fakeFetch(url: string) {
   calls.push(url);
   const json = (body: unknown) =>
     new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  if (url.includes('/data/summary')) return json({ max_draw: 1242 });
   if (url.includes('/recommend/strategies')) return json([{ id: 'uniform', label: '균등', basis: 'b', expectation: 'e' }]);
   if (url.includes('/recommend/history/summary'))
     return json({ total_filtered: 3, total_all: 40, origin: 'user', by_origin: { user: 40, backtest: 19200 }, by_strategy: { uniform: 40 }, target_draws: [1241], batches: [] });
@@ -121,6 +122,7 @@ test('"내 번호로 자동 등록" 버튼이 필터 초기화 우측에 있고 
   const buttons = Array.from(group.querySelectorAll('button')).map((b) => b.textContent);
   expect(buttons.indexOf('내 번호로 자동 등록')).toBe(buttons.indexOf('필터 초기화') + 1);
   const autoBtn = screen.getByRole('button', { name: '내 번호로 자동 등록' });
+  await waitFor(() => expect(autoBtn).toBeEnabled()); // 회차 정보·진행 예정 추천 확인 후 활성 (v1.19)
   expect(autoBtn).toHaveAttribute('title', expect.stringMatching(/1\.\.P 중 5개 무작위 추출/));
   expect(group.textContent).not.toMatch(/빈도 상위 5 위치의 전략별 최신 티켓 등록/);
   fireEvent.click(screen.getByRole('button', { name: '내 번호로 자동 등록' }));
@@ -130,4 +132,108 @@ test('"내 번호로 자동 등록" 버튼이 필터 초기화 우측에 있고 
   expect(status.textContent).toMatch(/대상 1241회/);
   expect(status.textContent).toMatch(/2, 4, 5, 7, 9/);
   expect(status.textContent).toMatch(/등록 1장/);
+});
+
+test('"추천 초기화" 버튼이 자동 등록 우측에 있고 확인 후 DELETE /recommend/history 를 호출한다 (S4.12)', async () => {
+  const { fireEvent } = await import('@testing-library/react');
+  const confirmSpy = vi.fn(() => true);
+  vi.stubGlobal('confirm', confirmSpy);
+  const dels: string[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (u: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(u);
+      if (init?.method === 'DELETE' && url.includes('/recommend/history')) {
+        dels.push(url);
+        return new Response(JSON.stringify({ target_draw_no: 1243, deleted_recommendations: 10, deleted_outcomes: 0 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return fakeFetch(url);
+    }),
+  );
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <RunProvider>
+          <Recommend />
+        </RunProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const group = screen.getByRole('group', { name: '추천 이력 필터' });
+  const buttons = Array.from(group.querySelectorAll('button')).map((b) => b.textContent);
+  expect(buttons.indexOf('추천 초기화')).toBe(buttons.indexOf('내 번호로 자동 등록') + 1);
+
+  await waitFor(() => expect(screen.getByRole('button', { name: '추천 초기화' })).toBeEnabled());
+  confirmSpy.mockReturnValueOnce(false);
+  fireEvent.click(screen.getByRole('button', { name: '추천 초기화' }));
+  expect(dels).toHaveLength(0); // 취소하면 호출 없음
+
+  fireEvent.click(screen.getByRole('button', { name: '추천 초기화' }));
+  await waitFor(() => expect(dels).toHaveLength(1));
+  expect(dels[0]).toMatch(/\/api\/v1\/recommend\/history$/);
+  const status = await screen.findByRole('status', { name: '추천 초기화 결과' });
+  expect(status.textContent).toMatch(/1243회 추천 10장/);
+});
+
+test('방어(v1.19): 결과가 입력된 회차를 필터로 고르면 자동 등록 비활성, 진행 예정 회차에 추천이 없으면 초기화 비활성', async () => {
+  const { fireEvent } = await import('@testing-library/react');
+  let upcoming = 3;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (u: RequestInfo | URL) => {
+      const url = String(u);
+      if (url.includes('/recommend/history/summary') && url.includes('target_draw_no=1243'))
+        return new Response(JSON.stringify({ total_filtered: upcoming, total_all: 40, origin: 'user', by_origin: {}, by_strategy: {}, target_draws: [1241], batches: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return fakeFetch(url);
+    }),
+  );
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <RunProvider>
+          <Recommend />
+        </RunProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const auto = screen.getByRole('button', { name: '내 번호로 자동 등록' });
+  const reset = screen.getByRole('button', { name: '추천 초기화' });
+  await waitFor(() => expect(auto).toBeEnabled());
+  expect(reset).toBeEnabled();
+  // 결과가 입력된 회차(1241) 선택 → 자동 등록 비활성 + 사유 툴팁
+  fireEvent.change(screen.getByLabelText('대상 회차 필터'), { target: { value: '1241' } });
+  await waitFor(() => expect(auto).toBeDisabled());
+  expect(auto).toHaveAttribute('title', expect.stringMatching(/결과가 입력된 회차/));
+  expect(reset).toBeEnabled(); // 초기화는 필터와 무관하게 진행 예정 회차 기준
+  cleanup();
+  vi.unstubAllGlobals();
+
+  // 진행 예정 회차에 저장된 추천이 0장 → 둘 다 비활성
+  upcoming = 0;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (u: RequestInfo | URL) => {
+      const url = String(u);
+      if (url.includes('/recommend/history/summary') && url.includes('target_draw_no=1243'))
+        return new Response(JSON.stringify({ total_filtered: 0, total_all: 0, origin: 'user', by_origin: {}, by_strategy: {}, target_draws: [], batches: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return fakeFetch(url);
+    }),
+  );
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>
+        <RunProvider>
+          <Recommend />
+        </RunProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(screen.getByRole('button', { name: '추천 초기화' })).toHaveAttribute('title', expect.stringMatching(/저장된 추천이 없습니다/)));
+  expect(screen.getByRole('button', { name: '추천 초기화' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: '내 번호로 자동 등록' })).toBeDisabled();
 });

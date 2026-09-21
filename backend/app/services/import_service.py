@@ -48,13 +48,16 @@ class ImportResult:
         }
 
 
+PRIZE_FIELDS = tuple(f"{k}{i}" for i in (1, 2, 3, 4, 5) for k in ("prize", "winners"))
+
+
 def _differs(existing: Draw, rec: DrawRecord) -> dict | None:
     diff: dict[str, dict] = {}
     if existing.numbers != rec.numbers:
         diff["numbers"] = {"existing": existing.numbers, "incoming": rec.numbers}
     if existing.bonus != rec.bonus:
         diff["bonus"] = {"existing": existing.bonus, "incoming": rec.bonus}
-    for f in ("prize1", "winners1", "prize2", "winners2"):
+    for f in PRIZE_FIELDS:
         ev, iv = getattr(existing, f), getattr(rec, f)
         if iv is not None and ev is not None and ev != iv:
             diff[f] = {"existing": ev, "incoming": iv}
@@ -93,7 +96,7 @@ def apply_records(
         if diff is None:
             result.skipped_duplicate += 1
             # 기존 결측 보강 (당첨 정보만)
-            for f in ("prize1", "winners1", "prize2", "winners2"):
+            for f in PRIZE_FIELDS:
                 if getattr(ex, f) is None and getattr(rec, f) is not None:
                     setattr(ex, f, getattr(rec, f))
             continue

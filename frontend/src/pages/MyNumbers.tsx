@@ -55,6 +55,28 @@ export default function MyNumbers() {
     },
   });
 
+  // S5.9 내 번호 초기화 — 표시 중인 대상 회차(전체 회차 선택 시 비활성)
+  const resetDraw = typeof effectiveDraw === 'number' ? effectiveDraw : null;
+  // v1.19 방어: 진행 예정 회차(최신 결과 회차 + 1 이상)이고 등록된 번호가 있을 때만 초기화 가능
+  const resetBlock =
+    resetDraw === null
+      ? '전체 회차에서는 사용할 수 없습니다 — 대상 회차를 선택하세요'
+      : !ctx
+        ? '회차 정보를 불러오는 중입니다'
+        : resetDraw <= ctx.latest_result_draw
+          ? `${resetDraw}회는 결과가 입력된 회차입니다 — 진행 예정 회차의 번호만 초기화할 수 있습니다`
+          : tickets.data && tickets.data.length === 0
+            ? `${resetDraw}회에 등록된 번호가 없습니다`
+            : null;
+  const resetTickets = useMutation({
+    mutationFn: (d: number) => api.user.reset(d),
+    onSuccess: () => {
+      setLottery(null);
+      void qc.invalidateQueries({ queryKey: ['user'] });
+      void qc.invalidateQueries({ queryKey: ['tracking'] });
+    },
+  });
+
   const toggle = (n: number) => {
     if (bonusMode) {
       if (picked.includes(n)) return;
@@ -177,15 +199,29 @@ export default function MyNumbers() {
                 </select>
               </label>
             )}
+          <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
           <button
             type="button"
-            className={`${btnCls} bg-emerald-700 hover:bg-emerald-800`}
+            className={`${btnCls} shrink-0 !px-2 bg-emerald-700 hover:bg-emerald-800`}
             disabled={!tickets.data?.length}
             title={`1..N(저장된 번호 ${tickets.data?.length ?? 0}개) 중 5개 무작위 추출 × 다음 회차 ${nextDraw}회 → 빈도 상위 5 위치를 ★ 표시 (화면 표시만, 저장 없음)`}
             onClick={tryLottery}
           >
             등록된 번호로 추첨 시도
           </button>
+          <button
+            type="button"
+            className={`${btnCls} shrink-0 !px-2 bg-red-700 hover:bg-red-800`}
+            disabled={resetDraw === null || resetBlock !== null || resetTickets.isPending}
+            title={resetBlock ?? `진행 예정 ${resetDraw}회 대상으로 등록된 내 번호를 모두 삭제 (다른 회차는 유지)`}
+            onClick={() => {
+              if (resetDraw === null || resetBlock !== null) return;
+              if (window.confirm(`진행 예정 ${resetDraw}회 대상으로 등록된 내 번호를 모두 삭제할까요?\n되돌릴 수 없습니다.`)) resetTickets.mutate(resetDraw);
+            }}
+          >
+            {resetTickets.isPending ? '초기화 중…' : '내 번호 초기화'}
+          </button>
+          </div>
           </div>
         }
       >
@@ -196,6 +232,12 @@ export default function MyNumbers() {
               : ctx.reason === 'next_recommended' || ctx.reason === 'next_registered'
                 ? `다음 회차(${ctx.next_draw}회) ${ctx.reason === 'next_recommended' ? '추천이 저장되어' : '번호가 등록되어'} ${ctx.next_draw}회 대상 번호만 표시합니다. 이전 회차 번호는 삭제되지 않았으며 회차 필터에서 볼 수 있습니다.`
                 : `다음 회차(${ctx.next_draw}회) 대상 번호를 표시합니다.`}
+          </p>
+        )}
+        {resetTickets.isError && <ErrorBox error={resetTickets.error} />}
+        {resetTickets.data && (
+          <p className="mb-2 text-xs text-red-800 dark:text-red-200" role="status" aria-label="내 번호 초기화 결과">
+            {resetTickets.data.target_draw_no}회 내 번호 {resetTickets.data.deleted_tickets.toLocaleString()}장을 초기화했습니다.
           </p>
         )}
         {lottery && (

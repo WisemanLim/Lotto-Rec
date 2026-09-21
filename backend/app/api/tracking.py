@@ -45,6 +45,17 @@ def outcomes_summary(
     return tsvc.outcomes_summary(session, strategy=strategy, draw_no=draw_no, source=source, origin=origin)
 
 
+@router.get("/consistency")
+def consistency(
+    origin: str = Query("user", pattern="^(user|backtest|all)$"),
+    source: str = Query("recommendation", pattern="^(recommendation|user|all)$"),
+    strategy: str | None = None,
+    session: Session = Depends(get_session),
+) -> dict:
+    """S8.7 추천 정합성 분석 — 등수 분포·일치수 GOF·번호 상관·번호쌍 상관 (BH 보정)."""
+    return tsvc.recommendation_consistency(session, origin=origin, source=source, strategy=strategy)
+
+
 @router.get("/pending")
 def pending(session: Session = Depends(get_session)) -> dict:
     return tsvc.pending_tickets(session)

@@ -75,7 +75,9 @@ test('타이틀 우측 최근 N회차(.env) 당첨번호 + 대상 회차/시도 
   const btn = within(tools).getByRole('button', { name: '등록된 번호로 추첨 시도' });
   await waitFor(() => expect(select).toBeInTheDocument());
   expect(select.compareDocumentPosition(btn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(tools.children).toHaveLength(2);
+  expect(tools.children).toHaveLength(2); // v1.15: 2줄째에 '추첨 시도'·'내 번호 초기화'(S5.9) 한 줄 배치
   expect(tools.children[0]).toContainElement(select);
-  expect(tools.children[1]).toBe(btn);
+  expect(tools.children[1]).toContainElement(btn);
+  expect(tools.children[1]).toHaveTextContent('내 번호 초기화');
+  expect(btn.parentElement).toBe(tools.children[1]); // 두 버튼은 같은 한 줄(flex-nowrap)
 });

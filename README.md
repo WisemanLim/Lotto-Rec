@@ -86,7 +86,7 @@ LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all   # honcho �
 | `LOTTO_RUN_RETENTION` | 20 | 분석 run 보존 개수(0=무제한). 군별 최신·활성 실험 참조 run 은 보존 |
 | `LOTTO_CROSS_DRAW_LAG` | 5 | **회차간 교차 공출현 전/후 간격 L**(1–50). lag 1..L 개별 + 창 합산 분석, 경계 회차(앞·뒤 L 회)는 간격 내 가능한 쌍만 포함. 변경 후 `make local-restart` → 새 분석 run(또는 `make reanalyze`). 현재 값은 `GET /config`·설정 화면에서 확인, 회차간 연관성 화면이 run 의 L 과 다르면 안내 |
 | `LOTTO_RECENT_DRAWS` | 5 | 내 번호 '저장된 번호' 타이틀 우측 **최근 당첨번호 회차 수**(1–20, S5.8). `/config` `lotto_recent_draws` 로 노출. local 은 **저장 즉시 자동 반영**(uvicorn 이 `.env.local` 감시), docker 는 `make docker-restart` |
-| `LOTTO_PRIZE_RANK3_DEFAULT` / `_RANK4_` / `_RANK5_` | 1500000 / 50000 / 5000 | 3·4·5등 고정 당첨금(가정값, 성과추적) |
+| `LOTTO_PRIZE_RANK3_DEFAULT` / `_RANK4_` / `_RANK5_` | 1500000 / 50000 / 5000 | 4·5등 고정 당첨금, 3등은 회차에 실제 값(총액÷당첨게임 수)이 없을 때의 기본값(성과추적; `/config` 로 결과 입력 화면에 전달) |
 | `DATABASE_URL` | `sqlite:///./data/lotto.db` | 루트 기준 상대경로 → 절대경로 자동 변환 |
 | `LOTTO_BACKEND_PORT` / `LOTTO_FRONTEND_PORT` | 8000 / 5173 | 127.0.0.1 바인딩 |
 | `APP_NAME` | Lotto number recommender | 표시명(API title). 저장소·패키지명은 Lotto-Rec |
@@ -97,13 +97,13 @@ LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all   # honcho �
 | 영역 | 엔드포인트 |
 |---|---|
 | 설정 | `GET /api/v1/config` |
-| 데이터 | `POST /data/import` (xlsx/csv 증분, `?overwrite`) · `POST /data/draws` (단일 회차) · `GET /data/draws[/{n}]` · `GET /data/summary` · `GET /data/imports` |
+| 데이터 | `POST /data/import` (xlsx/csv 증분, `?overwrite`) · `POST /data/draws` (단일 회차, 1~5등 `prizeN`(1게임당 당첨금)·`winnersN`(당첨게임 수) 선택 입력; S1.6) · `GET /data/draws[/{n}]` · `GET /data/summary` · `GET /data/imports` |
 | 분석 | `POST /analysis/runs` {cohort A\|B\|ALL, preset, alpha?, correction?, seed?, mc_iterations?, sync?} · `GET /analysis/runs[/latest\|/{id}]` · `GET /analysis/runs/{id}/{section}` (summary, frequency, frequency_bonus, global, pairs, network, itemsets, groups, temporal, **cross_draw**, winners_model, null_summary, diff_vs_previous) · `DELETE /analysis/runs/{id}` · `POST /analysis/itemsets/query` {items \| target+given} |
 | 검증 | `POST /validation/runs` {strategies?, tickets_per_draw?, from_draw?, to_draw?, seed?, insert_draws, sync?} · `GET /validation/runs[/latest\|/{id}]` · `GET /validation/runs/{id}/{kind}` (meta, backtest, scoring, replication, homogeneity) |
-| 추천 | `GET /recommend/strategies` · `POST /recommend` {strategy, count?, seed?, max_shared?, include_control, save} → sets[].params_used·experiment, analysis_basis, tickets[].`past_wins`(과거 1·2등 일치 회차, S4.9) · `GET /recommend/history?origin=user\|backtest\|all&limit(≤50000)&offset&strategy&batch_id&target_draw_no`(행마다 `past_wins`) · `GET /recommend/history/summary?origin=` · `POST /recommend/sequential` {strategies?, count?, seed?, max_shared?, save} → **모든 전략 순차 생성**(카탈로그 순, 전략별 batch, control 미포함, 실패 전략은 `failed` 로 계속·보고; S4.11) · `POST /recommend/auto-register` {target_draw_no?, seed?} → 1..P 중 5개 무작위 추출 × 대상 회차 수 → 빈도 상위 5 위치의 전략별 최신 batch 티켓을 내 번호로 등록(같은 번호·회차는 ★ 중복 병합 → `merged_duplicates`/`total_merged`, S4.10·S5.6) |
+| 추천 | `GET /recommend/strategies` · `POST /recommend` {strategy, count?, seed?, max_shared?, include_control, save} → sets[].params_used·experiment, analysis_basis, tickets[].`past_wins`(과거 1·2등 일치 회차, S4.9) · `GET /recommend/history?origin=user\|backtest\|all&limit(≤50000)&offset&strategy&batch_id&target_draw_no`(행마다 `past_wins`) · `GET /recommend/history/summary?origin=` · `POST /recommend/sequential` {strategies?, count?, seed?, max_shared?, save} → **모든 전략 순차 생성**(카탈로그 순, 전략별 batch, control 미포함, 실패 전략은 `failed` 로 계속·보고; S4.11) · `DELETE /recommend/history[?target_draw_no=]` → **추천 초기화**(진행 예정 회차=최신+1 의 origin=user 추천 삭제, 결과 입력된 회차는 400; S4.12) · `POST /recommend/auto-register` {target_draw_no?, seed?} → 1..P 중 5개 무작위 추출 × 대상 회차 수 → 빈도 상위 5 위치의 전략별 최신 batch 티켓을 내 번호로 등록(같은 번호·회차는 ★ 중복 병합 → `merged_duplicates`/`total_merged`, S4.10·S5.6) |
 | 실험(전략 개선 루프) | `GET /experiments/strategy-params` · `POST /experiments/runs` {strategy, base_params?, search random\|coordinate, n_candidates, tune_from/to, holdout_from/to, tickets_per_draw, seed, sync} · `GET /experiments/runs[?strategy]` · `GET /experiments/runs/{id}` · `GET /experiments/lineage?strategy=` · `GET /experiments/active` · `POST /experiments/runs/{id}/activate` · `POST /experiments/deactivate?strategy=` · `DELETE /experiments/runs/{id}` |
-| 사용자 | `POST /user/tickets/evaluate` · `POST /user/tickets`(같은 번호·대상 회차가 이미 있으면 새 행 없이 병합: `dup_count`+1·`dup_labels` 누적, S5.6) · `GET /user/tickets?target_draw_no=`(회차 필터 S5.7; 행마다 `dup_count`·`dup_labels`·`same_number_ticket_ids`·`duplicate`) · `GET /user/tickets/draws`(**현재 대상 회차** 컨텍스트: next_draw·latest_result_draw·active_target_draw·reason·draws[{target_draw_no,count,evaluated}] — 다음 회차 추천 저장/등록 시 next, 아니면 최근 등록 회차) · `DELETE /user/tickets/{id}` |
-| 성과 추적 | `GET /tracking/summary?origin=user\|backtest` · `GET /tracking/outcomes?draw_no&strategy&source&origin&limit(≤50000)&offset`(행마다 `past_wins`) · `GET /tracking/outcomes/summary` · `GET /tracking/pending` · `POST /tracking/evaluate/{draw_no}` |
+| 사용자 | `POST /user/tickets/evaluate` · `POST /user/tickets`(같은 번호·대상 회차가 이미 있으면 새 행 없이 병합: `dup_count`+1·`dup_labels` 누적, S5.6) · `GET /user/tickets?target_draw_no=`(회차 필터 S5.7; 행마다 `dup_count`·`dup_labels`·`same_number_ticket_ids`·`duplicate`) · `DELETE /user/tickets?target_draw_no=`(필수) → **내 번호 초기화**(진행 예정 회차 번호만 삭제, 결과 입력된 회차는 400; S5.9) · `GET /user/tickets/draws`(**현재 대상 회차** 컨텍스트: next_draw·latest_result_draw·active_target_draw·reason·draws[{target_draw_no,count,evaluated}] — 다음 회차 추천 저장/등록 시 next, 아니면 최근 등록 회차) · `DELETE /user/tickets/{id}` |
+| 성과 추적 | `GET /tracking/summary?origin=user\|backtest` · `GET /tracking/consistency?origin=&source=&strategy=` → **추천 정합성 분석**(전략별 등수 분포·일치수 GOF·번호 상관·번호쌍 상관, BH 보정 q·`feedback`·`next_experiment`; S8.7) · `GET /tracking/outcomes?draw_no&strategy&source&origin&limit(≤50000)&offset`(행마다 `past_wins`) · `GET /tracking/outcomes/summary` · `GET /tracking/pending` · `POST /tracking/evaluate/{draw_no}` |
 
 예시 (군 A 분석, 실제 응답 요약):
 
@@ -164,6 +164,12 @@ curl -s localhost:8000/api/v1/analysis/runs/<run_id>/summary | jq .kpi
 | impl/18th | S5.6 내 번호 **★ 중복 ×n 표시** — 같은 번호·회차 등록은 병합(`user_ticket.dup_count/dup_labels`, Alembic 5b12a3e1), 다른 회차 동일 번호는 `same_number_ticket_ids` 로 묶음, 자동 등록 skip→merge, 용어 `duplicate_ticket`(중복 생성 ≠ 유의성 증거) | PASS 8/8 (pytest 63, vitest 35) |
 | impl/19th | 버그 수정 — 내 번호 보너스 포함 평가 시 백색 화면(스코어카드 `bonus` dict → int, `bonus_info` 분리, ScorecardView 방어 렌더) | PASS 4/4 (pytest 63, vitest 37) |
 | impl/20th | 버그 수정 — `.env.local` 값 미적용(pydantic-settings `env_file` 뒤 파일 우선 → example 이 덮어씀; 순서 example → `.env` → `.env.local` 로 수정, 우선순위 회귀 테스트) | PASS 6/6 (pytest 65, vitest 37) |
+| impl/37th | v1.19 **방어 코드** — 추천 초기화·내 번호 초기화·추천 자동 등록은 결과가 입력되지 않은 진행 예정 회차에서만(API 400, 버튼 비활성+사유 툴팁), 성과 추적의 중복 '추첨 결과 입력 / 업로드' 섹션 주석 처리로 숨김 | PASS 8/8 |
+| impl/36th | S1.7 **결과 입력 옆 과거 6회차 요약** — '추첨 결과 직접 입력' 제목 우측 회차 칩(1242…1237), 마우스 오버/포커스 툴팁 표(당첨번호·등위별 총 당첨금·당첨게임 수·1게임당 당첨금), 기존 `GET /data/draws` 재사용 | PASS 5/5 (vitest 59) |
+| impl/35th | S1.6 v1.17 **등위별 총 당첨금 입력·자동계산** — 1~3등 총액÷당첨게임 수 → 1게임당 당첨금, 4·5등 고정값(50,000·5,000) 유지, 등수 5열 전폭 표, 데이터 요약 강조·입력/업로드 패널 구분, 업로드 안내 문구 버튼 우측 | PASS 7/7 (vitest 56) |
+| impl/34th | S8.7~S8.9 **추천 정합성 분석** — 추천 티켓 전체 vs 실제 결과(등수 분포·일치수 GOF·번호 상관·번호쌍 상관, BH 보정, 재튜닝 제안), 성과 추적 화면 섹션, `GET /tracking/consistency` | PASS 8/8 (pytest 88, vitest 54) |
+| impl/33rd | S1.6 **설정/실행 결과 입력 재구성** — 직접 입력·파일 업로드 상하 배치, 업로드 도구 한 줄, 1~5등 당첨게임 수·1게임당 당첨금 입력(`draws.prize3..5/winners3..5`, Alembic c41d7a92) | PASS 6/6 (pytest 88, vitest 54) |
+| impl/32nd | 사용자 요청 — **추천 초기화**(현재 회차 추천 삭제, S4.12)·**내 번호 초기화**(표시 중 대상 회차 삭제, S5.9) 버튼, 버튼 한 줄 배치 | PASS 7/7 (pytest 79, vitest 49) |
 | impl/31st | 사용자 보고 "`LOTTO_RECENT_DRAWS` 수정해도 미적용" — uvicorn `--reload` 가 `backend/*.py` 만 감시. Procfile `--reload-dir .. --reload-include .env.local`(frontend/data/test 제외)로 **`.env` 저장 즉시 재기동**(1초 내 반영 확인). `make local-restart` 포트 경쟁(`Address already in use`) 수정 | PASS 4/4 |
 | impl/30th | S5.8 최근 당첨번호 **2열 그리드**(`grid-cols-[repeat(2,max-content)]`, 라벨 줄바꿈 금지, 우측 도구 `shrink-0`) — 3열은 1280px 에서 우측 도구와 겹쳐 사용자 결정 2열 | PASS 3/3 (pytest 76, vitest 46) |
 | impl/29th | S5.8 최근 당첨번호 회차 수 **`.env` 관리** — `LOTTO_RECENT_DRAWS`(기본 5, 1–20) → `/config` `lotto_recent_draws` → 내 번호 화면(config 로드 후 1회 요청), 설정 화면 설명·계약 테스트 | PASS 5/5 (pytest 76, vitest 46) |
@@ -218,10 +224,11 @@ Lotto-Rec/
 | `This project is configured to use 9.9.0 of pnpm` | `packageManager` 핀 ≠ 전역 pnpm. 반드시 `frontend/` 안에서 `pnpm …` 실행(Makefile·Procfile 은 `cd frontend &&` 사용). 또는 핀을 설치 버전으로 변경 |
 | **보너스 포함 평가 후 백색 화면** | 스코어카드 응답 `bonus` 가 객체로 내려와 `BallRow` 가 객체를 렌더 → React 크래시. v1.9.1 에서 `bonus` int\|null + `bonus_info` 분리, 프론트 방어 렌더 |
 | **`.env.local` 값(예: `LOTTO_NUMBER_RECOMMENDATION_COUNT=20`)이 적용 안 됨** | pydantic-settings 는 `env_file` 튜플의 **뒤 파일이 우선**인데 `.env.local.example` 이 뒤에 있어 기본값이 항상 승리했음. v1.9.2 에서 순서를 example → `.env` → `.env.local` 로 수정. 파일 변경은 uvicorn reload 대상이 아니므로 `make local-restart` 필요 |
+| 1241·1242회 당첨금이 실제보다 크게 보임 | 과거 수동 입력 때 '1등 당첨금' 칸에 등위별 **총** 당첨금을 넣었던 것(xlsx 시드는 1게임당). 2026-09-21 총액÷당첨자 수로 정정 완료(백업 `data/backup/lotto_pre_prizefix_*.db`). 입력 라벨은 '1게임당 당첨금'(v1.16) |
 
 ## 다음 단계 / 잔여
 
-- Q4(3~5등 고정 당첨금)·Q5(run 보존 개수) 최종 확인 — 둘 다 env 기본값으로 잠정 확정.
+- Q4(3~5등 고정 당첨금)는 v1.16 부터 회차별 실제 값(입력 시)을 우선 사용, 미입력 회차는 env 기본값. Q5(run 보존 개수)는 env 기본값으로 잠정 확정.
 - Playwright 스모크(P2) — 브라우저 바이너리 다운로드 필요, 미착수(대체: browse 라이브 스크린샷).
 - API 경로 변경 시 `test/backend/openapi_paths.snapshot.json` 의도적 갱신 필요.
 - 선택: `/wise-dev-std:review`(코드 리뷰), `/wise-dev-std:standardize`(IDE 규칙).

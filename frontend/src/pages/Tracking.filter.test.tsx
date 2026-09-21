@@ -45,3 +45,20 @@ test('티켓 결과 필터 바·건수 요약 렌더, limit·origin 파라미터
   await waitFor(() => expect(screen.getByRole('option', { name: '1240회' })).toBeInTheDocument());
   expect(calls.some((u) => /\/tracking\/outcomes\?.*limit=200/.test(u) && /origin=user/.test(u))).toBe(true);
 });
+
+test('설정/실행과 중복되는 "추첨 결과 입력 / 업로드" 섹션은 성과 추적 화면에서 숨겨진다 (S8.6-1)', async () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <RunProvider>
+          <Tracking />
+        </RunProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(screen.getByRole('group', { name: '티켓 결과 필터' })).toBeInTheDocument());
+  expect(screen.queryByText('추첨 결과 입력 / 업로드')).not.toBeInTheDocument();
+  expect(screen.queryByRole('form', { name: '추첨 결과 직접 입력' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('form', { name: '파일 업로드' })).not.toBeInTheDocument();
+});

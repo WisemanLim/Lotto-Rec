@@ -47,9 +47,27 @@ COLUMN_ALIASES: dict[str, str] = {
     "2등 당첨수": "winners2",
     "winners2": "winners2",
     "2등당첨수": "winners2",
+    "3등 당첨금": "prize3",
+    "prize3": "prize3",
+    "3등당첨금": "prize3",
+    "3등 당첨수": "winners3",
+    "winners3": "winners3",
+    "3등당첨수": "winners3",
+    "4등 당첨금": "prize4",
+    "prize4": "prize4",
+    "4등당첨금": "prize4",
+    "4등 당첨수": "winners4",
+    "winners4": "winners4",
+    "4등당첨수": "winners4",
+    "5등 당첨금": "prize5",
+    "prize5": "prize5",
+    "5등당첨금": "prize5",
+    "5등 당첨수": "winners5",
+    "winners5": "winners5",
+    "5등당첨수": "winners5",
 }
 REQUIRED = ["draw_no", "n1", "n2", "n3", "n4", "n5", "n6", "bonus"]
-OPTIONAL = ["prize1", "winners1", "prize2", "winners2"]
+OPTIONAL = [f"{k}{i}" for i in (1, 2, 3, 4, 5) for k in ("prize", "winners")]
 
 
 @dataclass(frozen=True)
@@ -66,6 +84,12 @@ class DrawRecord:
     winners1: int | None = None
     prize2: int | None = None
     winners2: int | None = None
+    prize3: int | None = None
+    winners3: int | None = None
+    prize4: int | None = None
+    winners4: int | None = None
+    prize5: int | None = None
+    winners5: int | None = None
 
     @property
     def numbers(self) -> list[int]:
@@ -178,6 +202,12 @@ def parse_draws(df: pd.DataFrame, pool_size: int = 45, main_count: int = 6) -> P
                 winners1=_to_int(r.get("winners1")),
                 prize2=_to_int(r.get("prize2")),
                 winners2=_to_int(r.get("winners2")),
+                prize3=_to_int(r.get("prize3")),
+                winners3=_to_int(r.get("winners3")),
+                prize4=_to_int(r.get("prize4")),
+                winners4=_to_int(r.get("winners4")),
+                prize5=_to_int(r.get("prize5")),
+                winners5=_to_int(r.get("winners5")),
             )
         )
     records.sort(key=lambda x: x.draw_no)

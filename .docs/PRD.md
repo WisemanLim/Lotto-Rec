@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 | :-- | :-- |
-| 문서 버전 | 1.14.3 (S5.8 저장된 번호 헤더 정렬·최근 당첨번호 · S7.1 docker compose 구동 · S4.11 추천 생성(순차) · S5.7 저장된 번호 회차 전환·필터 · 회차간 교차 공출현 S2.13 · `LOTTO_CROSS_DRAW_LAG` · 군 A/B/전체 재분석 1,241회 포함) |
+| 문서 버전 | 1.19 (S4.10·S4.12·S5.9 진행 예정 회차만 동작하는 방어 · S8.6-1 성과 추적 입력 영역 숨김 · S1.7 결과 입력 옆 과거 6회차 요약 · S1.6 등위별 총 당첨금·자동계산·영역 구분 · S1.6 설정/실행 결과 입력 재구성·1~5등 당첨정보 · S8.7 추천 정합성 분석 · S4.12·S5.9 현재 회차 초기화 · S5.8 저장된 번호 헤더 정렬·최근 당첨번호 · S7.1 docker compose 구동 · S4.11 추천 생성(순차) · S5.7 저장된 번호 회차 전환·필터 · 회차간 교차 공출현 S2.13 · `LOTTO_CROSS_DRAW_LAG` · 군 A/B/전체 재분석 1,241회 포함) |
 | 작성일 | 2026-09-08 |
 | 상태 | Draft → 구현 중 보완 (living document) |
 | 근거 문서 | `.docs/Perplexity-로또번호 무작위 추출 통계분석.md`, `.docs/lotto(~1240).xlsx` |
@@ -332,6 +332,8 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 - S1.2 정합성 검증: 회차 연속·중복, 번호 범위 1–45, 본번호 6개 유일, 보너스 ≠ 본번호, 결측. 위반 시 회차 목록과 함께 거부.
 - S1.3 incidence matrix(본번호/보너스), 파생 특성, 군 라벨 생성·저장(SQLite + Parquet).
 - S1.4 데이터 버전(해시)과 `analysis_run_id` 연결. 동일 데이터·설정·seed → 동일 결과.
+- S1.6 (v1.16, 사용자 요청) **설정/실행 '데이터 요약' 입력 영역 재구성** — (a) 배치: 기존 좌(직접 입력)·우(파일 업로드) 2열을 **상하**(위: 추첨 결과 직접 입력, 아래: 파일 업로드)로 바꾼다. (b) 파일 업로드 줄은 '파일 선택'·선택 파일명·'충돌 회차 덮어쓰기'·'업로드' 를 **한 줄**(줄바꿈 금지)에 배치한다. (c) 직접 입력 항목을 실제 추첨결과 페이지(동행복권 당첨결과 표)와 같은 구조로 바꾼다 — 회차·본번호 6개·보너스, 그리고 **1~5등 각각의 '당첨게임 수'와 '1게임당 당첨금'** 을 등수 행 × 2열 표로 입력(모두 선택). 기존 1·2등 4개 항목(`prize1/winners1/prize2/winners2`)에 3·4·5등(`prize3..5/winners3..5`)을 추가하며 `draws` 스키마·`POST /data/draws`·xlsx/CSV 컬럼(`3등 당첨금`·`3등 당첨수` … 별칭 포함)·`GET /data/draws` 에 반영한다(Alembic 마이그레이션, 기존 행은 NULL). 성과 추적(S8.2)의 3~5등 당첨금은 **회차에 실제 값이 있으면 그 값**, 없으면 기존 `가정:` 기본값을 사용한다. 자동/수동/반자동 비고는 통계적 용도가 없어 입력 대상에서 제외한다. (v1.17, 사용자 요청) **등위 입력 재설계·자동계산·영역 구분** — (a) 등수 입력은 **등수를 열(1등~5등, 화면 폭 전체)** 로, **등위별 총 당첨금 · 당첨게임 수 · 1게임당 당첨금**을 행으로 하는 표로 배치하고 입력 칸은 작게(회차·본번호·보너스도 한 줄) 한다. (b) **1~3등**: 총 당첨금과 당첨게임 수를 입력하면 **1게임당 당첨금 = 총 당첨금 ÷ 당첨게임 수**(반올림 정수, 당첨게임 수 0/미입력이면 미계산)를 자동 계산해 읽기 전용으로 표시하고 그 값을 `prizeN` 으로 전송한다. (c) **4·5등**: 1게임당 당첨금은 **고정값**(`LOTTO_PRIZE_RANK4_DEFAULT` 50,000 · `LOTTO_PRIZE_RANK5_DEFAULT` 5,000, `/config` 로 전달)을 그대로 유지하며 읽기 전용, 총 당첨금 = 당첨게임 수 × 고정값을 자동 표시한다. (d) 저장 스키마는 v1.16 과 같이 `prizeN` = 1게임당 당첨금, `winnersN` = 당첨게임 수(총 당첨금은 파생값이라 저장하지 않음). (e) 설정/실행 화면에서 **'데이터 요약' 블록은 강조 스타일**(진한 제목·굵은 값·색 배경 패널)로, '추첨 결과 직접 입력'과 '파일 업로드'는 **각각 테두리 패널**로 구분해 세 영역이 한눈에 나뉘게 한다. (f) 파일 업로드 안내 문구('새 회차가 1건 이상…')는 **업로드 버튼 우측 빈 공간**에 배치한다.
+- S1.7 (v1.18, 사용자 요청) **추첨 결과 직접 입력 옆 과거 결과 요약**: 설정/실행 '추첨 결과 직접 입력' 패널 제목 **우측 빈 공간**에 DB 최신 회차부터 내림차순 **6회차**(고정, 예: 1242 1241 1240 1239 1238 1237)의 **회차 번호만** 작은 칩으로 나열한다(과거 회차만, 입력 중인 회차·미래 회차는 표시하지 않음). 각 칩에 마우스를 올리거나 키보드 포커스를 주면 **툴팁 표**로 해당 회차의 당첨번호(본번호 6개 + 보너스 공)와 **등위별 총 당첨금 · 당첨게임 수 · 1게임당 당첨금**(1~5등)을 보여준다 — 실제 당첨결과 페이지의 표와 같은 구조. 값은 `GET /data/draws?limit=6&order=desc` 의 저장값을 쓰며, 총 당첨금 = 1게임당 × 당첨게임 수(4·5등 1게임당은 고정값, 저장값이 없는 항목은 '—'). 표시 전용(저장·계산 부작용 없음)이며 입력 폼 상태에 영향을 주지 않는다.
 
 ### E2. 통계분석 엔진 (P0~P1)
 
@@ -384,8 +386,9 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 - S4.7 (v0.6) 추천 결과의 각 티켓 카드와 추천 이력의 각 행에서 **'내 번호로 등록'** 가능(`POST /user/tickets` 재사용, label = `추천 <전략> #rec_id`, target_draw_no 승계). 등록 후 성과 추적 대상(전략 `user`)이 된다. (v1.7) 추천 카드는 확인 대화상자 후 등록, **추천 이력 행은 확인 없이 즉시 등록**한다(등록 완료 표시·내 번호 링크로 피드백).
 - S4.8 (v0.7) 추천 응답은 사용된 파라미터·활성 실험(세대·홀드아웃 성과)·분석 근거(군 A run, 이력 T, 상위 |z| 번호)를 포함하고 UI 에 표시한다(E9 S9.4).
 - S4.9 (v1.5, 사용자 요청) **과거 1·2등 일치 표시**: 추천 티켓의 6개 번호가 적재된 과거 회차 중 어느 회차의 1등(본번호 6개 동일) 또는 2등(본번호 5개 + 해당 회차 보너스)에 해당하면, 그 회차 번호를 **'티켓' 열(추천 카드·추천 이력·성과 추적 결과 표)** 에 공 옆에 `(386)` 형식으로 표시한다. 글씨는 기본 데이터보다 작고 회색 계통으로 흐릿하게, 툴팁에 등수(`386회 1등`)를 둔다. 복수 회차는 공백으로 나열한다. 응답 필드 `past_wins: [{draw_no, rank}]`(rank ∈ {1,2}, 회차 오름차순)를 `POST /recommend` 티켓·`GET /recommend/history` 행·`GET /tracking/outcomes` 행에 포함한다. 통계적 의미는 없음(균등 추첨에서 어느 티켓이든 동일 확률)을 §4.11 고지에 따라 해석한다.
-- S4.10 (v1.6, 사용자 요청) **내 번호로 자동 등록**: 추천 이력 필터 바의 '필터 초기화' 우측 버튼. 동작 — (a) 대상 회차 $D$(필터의 대상 회차, 미선택 시 최신 회차+1)를 정하고, (b) $1..P$($P$ = 추천 개수 `LOTTO_NUMBER_RECOMMENDATION_COUNT`, 기본 10)에서 서로 다른 5개를 무작위로 뽑는 시행을 **$D$ 회 반복**해 번호별 출현 빈도를 집계, (c) 빈도 상위 5개(동률은 작은 번호 우선)를 **티켓 위치**로 선택, (d) 대상 회차 $D$ 의 사용자 생성(origin=user) 추천 이력에서 **전략별 최신 batch** 의 티켓을 rec_id 오름차순 1..n 으로 번호 매겨 선택 위치의 티켓을 `POST /user/tickets` 와 동일 규칙(label `추천 <전략> #rec_id`, target_draw_no=$D$)으로 등록한다. 같은 번호·대상 회차가 이미 등록돼 있으면 (v1.9) 새 행을 만들지 않고 기존 행에 **병합**(`dup_count`+1, S5.6 ★ 표시)하며, 위치 > n 인 항목은 누락으로 보고한다. API `POST /recommend/auto-register` {target_draw_no?, seed?} → {selected, counts, rounds, seed, strategies[] (registered/merged_duplicates/missing), total_registered, total_merged}. seed 미지정 시 무작위이며 사용된 seed 를 응답에 남겨 재현 가능. 선택 절차는 오락용 규칙일 뿐 어떤 티켓도 당첨확률이 같다(§4.11). (v1.7) 규칙 설명은 버튼 하단 문구가 아니라 **버튼 마우스오버 툴팁**(`title`)으로만 표시한다.
+- S4.10 (v1.6, 사용자 요청) **내 번호로 자동 등록**: 추천 이력 필터 바의 '필터 초기화' 우측 버튼. 동작 — (a) 대상 회차 $D$(필터의 대상 회차, 미선택 시 최신 회차+1)를 정하고, (b) $1..P$($P$ = 추천 개수 `LOTTO_NUMBER_RECOMMENDATION_COUNT`, 기본 10)에서 서로 다른 5개를 무작위로 뽑는 시행을 **$D$ 회 반복**해 번호별 출현 빈도를 집계, (c) 빈도 상위 5개(동률은 작은 번호 우선)를 **티켓 위치**로 선택, (d) 대상 회차 $D$ 의 사용자 생성(origin=user) 추천 이력에서 **전략별 최신 batch** 의 티켓을 rec_id 오름차순 1..n 으로 번호 매겨 선택 위치의 티켓을 `POST /user/tickets` 와 동일 규칙(label `추천 <전략> #rec_id`, target_draw_no=$D$)으로 등록한다. 같은 번호·대상 회차가 이미 등록돼 있으면 (v1.9) 새 행을 만들지 않고 기존 행에 **병합**(`dup_count`+1, S5.6 ★ 표시)하며, 위치 > n 인 항목은 누락으로 보고한다. API `POST /recommend/auto-register` {target_draw_no?, seed?} → {selected, counts, rounds, seed, strategies[] (registered/merged_duplicates/missing), total_registered, total_merged}. seed 미지정 시 무작위이며 사용된 seed 를 응답에 남겨 재현 가능. 선택 절차는 오락용 규칙일 뿐 어떤 티켓도 당첨확률이 같다(§4.11). (v1.7) 규칙 설명은 버튼 하단 문구가 아니라 **버튼 마우스오버 툴팁**(`title`)으로만 표시한다. (v1.19, 방어 코드) **진행 예정 회차에서만 동작**한다 — 대상 회차 $D$ ≤ 최신 결과 회차이면 API 는 `400`("결과가 입력된 회차라 자동 등록할 수 없음")으로 거부하고, UI 버튼은 $D$(필터의 대상 회차, 미선택 시 최신+1)가 결과 확정 회차이거나 그 회차에 저장된 사용자 추천이 없으면 **비활성화**(툴팁에 사유)한다.
 - S4.11 (v1.12, 사용자 요청) **추천 생성(순차)**: 추천 생성 폼의 '추천 생성' 버튼 우측 '추천 생성(순차)' 버튼. 클릭 시 전략 선택에서 제공하는 **모든 전략을 카탈로그 순서대로** 같은 옵션(추천 개수·seed·최대 공유·저장)으로 한 번에 생성한다. 전략마다 별도 batch(성과 추적·S4.10 '전략별 최신 batch' 규칙과 호환), 균등 기준선은 목록의 `uniform` 전략 자체가 담당하므로 전략별 control 은 붙이지 않는다. 한 전략이 실패해도 나머지는 계속 진행하고 `failed` 로 보고. 결과는 전략별 추천 결과 섹션을 순서대로 표시하며 상단에 요약(전략 수·티켓 수·대상 회차·실패). API `POST /recommend/sequential` {strategies?, count?, seed?, max_shared?, save} → {sequence_id, target_draw_no, strategies, results[RecommendOut], failed[{strategy,error}], total_tickets}.
+- S4.12 (v1.15, 사용자 요청) **추천 초기화**: 추천 이력 필터 바의 '내 번호로 자동 등록' 우측 '추천 초기화' 버튼(필터 초기화·자동 등록·추천 초기화 3개는 **한 줄** 배치). **현재 회차**(= 최신 결과 회차 + 1, 예: 최신 1,242회면 1,243회)를 대상으로 저장된 **사용자 생성(origin=user) 추천 티켓 전체를 삭제**한다. 확인 대화상자(대상 회차 표기) 후 실행하며, 검증 replay(origin=backtest)·다른 회차 추천·내 번호(S5.9 별도)는 건드리지 않는다. 삭제 후 이력·요약·성과 추적이 즉시 갱신된다. API `DELETE /recommend/history?target_draw_no=` (미지정 시 최신 회차+1; origin=user 만 대상) → {target_draw_no, deleted_recommendations, deleted_outcomes}. 대상 회차 결과가 이미 적재돼 성과 결과(`ticket_outcome`, source=recommendation)가 있으면 함께 삭제해 고아 행을 남기지 않는다. (v1.19, 방어 코드) **결과가 입력된 회차의 추천은 초기화할 수 없다** — 대상 회차 ≤ 최신 결과 회차이면 그 추천은 이미 이전 회차의 성과 추적 대상이므로 API 는 `400`("결과가 입력된 회차는 초기화할 수 없음")으로 거부하고, UI '추천 초기화' 버튼은 **진행 예정 회차(최신+1)에 저장된 추천이 없으면 비활성화**(툴팁에 사유)한다. 성과 결과(`ticket_outcome`) 삭제 경로는 이 제한으로 실행되지 않는다.
 
 ### E5. 사용자 예측(통계기반 평가) (P0)
 
@@ -397,6 +400,8 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 - S5.6 (v1.9, 사용자 요청) **중복 등록 ★ 표시**: 추천→내 번호 등록(또는 직접 저장) 시 같은 6개 번호가 이미 저장되어 있으면, 같은 대상 회차인 경우 새 행을 만들지 않고 기존 행에 **병합**(`dup_count`+1, 라벨 누적)하고, 다른 회차면 새 행이되 동일 번호 그룹으로 묶는다. 저장 목록에 ★ 아이콘과 횟수(×n)를 표시하고, 응답에 `duplicate`·`dup_count`·`same_number_ticket_ids` 를 포함한다. 툴팁(용어 `duplicate_ticket`)에 정직한 해석을 명시: 여러 배치에서 같은 조합이 반복 생성되는 것은 전략 가중치(핫·z·lift)가 같은 방향으로 편향된 결과이며, 그 자체로 통계적 유의성이나 당첨확률 상승의 증거는 아니다 — 서로 다른 전략·seed 에서 독립적으로 반복될 때만 '관심 후보'로 다루고, 판단은 검증·성과 추적으로 한다.
 - S5.7 (v1.11, 사용자 요청) **저장된 번호의 회차 전환·회차 필터**: 내 번호 '저장된 번호' 목록은 **현재 대상 회차**의 티켓만 기본 표시한다. 현재 대상 회차 규칙 — 최신 결과 회차를 $R$(=DB 최대 회차), 다음 회차를 $R+1$ 이라 할 때, (a) $R+1$ 을 대상으로 **저장된 추천**(origin=user)이 있거나 $R+1$ 대상 내 번호가 등록돼 있으면 현재 대상 회차 = $R+1$; (b) 아니면 저장된 내 번호 중 **가장 최근 대상 회차**(보통 $R$, 결과 등록 직후라 낙첨·등수 확인 가능); (c) 내 번호가 없으면 $R+1$. 즉 설정/실행에서 추첨 결과를 등록한 직후에는 기존 번호와 결과가 그대로 보이고, 추천에서 **다음 회차 추천을 저장한 시점**에 목록이 다음 회차로 전환되어 이전 회차 번호는 기본 목록에서 사라진다(삭제 아님 — 다음 회차에 해당하는 내 번호가 없기 때문). 회차 필터(자동 = 현재 대상 회차 / 특정 회차(건수·결과 확정 여부 표시) / 전체)로 이전 회차 번호를 언제든 볼 수 있다. '등록된 번호로 추첨 시도'(S5.5)의 위치 풀 $N$ 은 표시 중인 목록 기준. API `GET /user/tickets/draws` → {next_draw, latest_result_draw, active_target_draw, reason, draws[{target_draw_no, count, evaluated}]}, `GET /user/tickets?target_draw_no=`.
 - S5.8 (v1.14, 사용자 요청) **저장된 번호 헤더 정렬 + 최근 당첨번호**: '저장된 번호' 섹션 헤더 우측의 '대상 회차' 필터(S5.7)와 '등록된 번호로 추첨 시도' 버튼(S5.5)을 **우측 정렬 세로 2줄**(1줄 대상 회차, 2줄 시도 버튼)로 배치한다. 비워진 헤더 중앙, 즉 타이틀 '저장된 번호 (대상 R+1회)' 바로 우측에 **최근 당첨번호**를 표시한다 — DB 최신 회차부터 내림차순 **기본 5회차**(`GET /data/draws?limit=N&order=desc`, $N$ = `LOTTO_RECENT_DRAWS`, 1–20, `/config` `lotto_recent_draws` 로 프론트에 전달 — v1.14.1), 행마다 `회차 · 6개 번호 + 보너스`(작은 공)를 **2열 그리드**(sm 이상 2열, 회차 라벨 줄바꿈 금지)로 배치해 헤더 여백을 채운다(v1.14.2). 표시 전용(저장·계산 없음), 회차 필터 값과 무관하게 항상 최신 5회차.
+
+- S5.9 (v1.15, 사용자 요청) **내 번호 초기화**: '저장된 번호' 헤더 우측 도구 2줄에 '등록된 번호로 추첨 시도'와 나란히 **한 줄** 배치된 '내 번호 초기화' 버튼. **현재 표시 중인 대상 회차**(회차 필터 '자동' = 현재 대상 회차(S5.7), 특정 회차 선택 시 그 회차)에 등록된 내 번호를 **모두 삭제**한다. '전체 회차' 선택 시 버튼은 비활성(회차 미특정 → 오삭제 방지). 확인 대화상자 후 실행하고, 다른 회차 번호·추천 이력은 유지한다. 삭제된 번호의 성과 결과(`ticket_outcome`, source=user)도 함께 삭제한다(결과 확정 회차이면 확인창에 명시). API `DELETE /user/tickets?target_draw_no=` (필수 파라미터) → {target_draw_no, deleted_tickets, deleted_outcomes}. 삭제 후 화면 상태(추첨 시도 ★)도 초기화한다. (v1.19, 방어 코드) **진행 예정 회차의 내 번호만 초기화**한다 — 대상 회차 ≤ 최신 결과 회차(결과 확정)이면 API 는 `400` 으로 거부하고, UI '내 번호 초기화' 버튼은 표시 회차가 결과 확정이거나 '전체 회차'이거나 해당 회차에 내 번호가 없으면 **비활성화**(툴팁에 사유)한다. 이에 따라 앞의 '결과 확정 회차 성과 결과 동반 삭제 확인창' 동작은 제거한다.
 
 ### E6. 대시보드 (P0~P1)
 
@@ -434,6 +439,10 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 - S8.4 각 회차 삽입 후 통계분석 자동 재실행(§S1.5) 결과와 이전 run의 차이 요약(유의 번호/쌍 변동, 전역 p 변동)을 실행 이력에 기록. (v0.9 구현) run 완료 시 같은 군의 직전 done run 과 비교한 `diff_vs_previous` 섹션(전역 p·유의 번호/쌍 집합 변동·최대 쌍·verdict 변화) 저장, 설정 화면 run 표에 요약 열.
 - S8.5 추적 결과 CSV 내보내기, 티켓 단위 상세(어떤 run·전략·seed로 생성됐는지 역추적).
 - S8.6 (v1.1, 사용자 요청) 티켓 단위 결과 조회: **회차·전략·출처(source: 추천/내 번호)·origin(사용자/검증 replay) 필터 + 표시 개수(20/50/100/200/500/전체)**, 서버 offset 페이징(limit ≤ 50,000), 필터 건수 요약(`GET /tracking/outcomes/summary`: 총건수·회차 목록·전략 목록·출처별 건수).
+- S8.6-1 (v1.19, 사용자 요청) 성과 추적 화면의 '추첨 결과 입력 / 업로드' 섹션은 설정/실행(S1.6·S1.7)과 **기능이 중복**되므로 화면에서 **숨긴다(코드는 주석 처리로 보존)**. 결과 입력·업로드는 설정/실행에서만 수행하며, 입력 후 성과 추적 조회는 기존처럼 자동 갱신된다.
+- S8.7 (v1.16, 사용자 요청) **추천 정합성 분석**: 결과 입력으로 새 회차가 대조될 때마다, 내 번호뿐 아니라 **추천으로 생성·저장된 티켓 전체**(source=recommendation, origin 필터 user/backtest/all)를 전략별로 실제 결과와 대조해 통계적 정합성을 점검한다. `GET /tracking/consistency?origin=&strategy=` 는 전략마다 다음을 반환한다. (1) **등수별 통계분포** — 0~5등(낙첨 포함) 관측·기대(하이퍼지오메트릭 $n\,p_k$)·비율, 등수별 이항 양측 p, 일치수(0~6) 카이제곱 적합도(기대 <5 셀은 꼬리로 병합) p. (2) **번호 상관** — 회차마다 45개 번호에 대해 x = 그 회차 해당 전략 티켓 중 번호를 포함한 비율(추천 빈도), y = 본번호 당첨 여부(0/1)의 상관계수 $r_d$ 를 구하고, 회차는 영가설에서 독립이므로 $r_d$ 의 회차 평균과 t 검정(양측)으로 '많이 추천한 번호가 실제로 더 나오는가'를 본다. (3) **번호쌍 상관** — 회차·전략별 추천된 고유 번호쌍 중 두 번호가 모두 당첨 본번호인 쌍 수를 기대 확률 $\binom{6}{2}/\binom{45}{2}$ 의 이항 z 로 검정(고유쌍 기준, 티켓 간 중첩 의존성은 근사로 명시). (4) 전략×검정 전체에 **BH 보정 q** 를 적용하고 `feedback` 을 낸다 — q<α(`LOTTO_SIGNIFICANCE_LEVEL` 기본 0.05)인 편차가 없으면 "균등 영가설과 구별 불가 — 로직 변경 근거 없음", 있으면 "유의 편차 — 재튜닝 후보(반드시 홀드아웃 재검증)"와 §E9 실험에 넣을 제안(`next_experiment`: 전략·튠 구간 끝 = 최신 회차). 모든 티켓의 이론 당첨확률이 같다는 §4.11 고지를 응답 `policy` 로 유지하며, 표본 부족(회차 <5)은 `insufficient` 로 표시한다.
+- S8.8 (v1.16) 성과 추적 화면에 **'추천 정합성 분석' 섹션**(origin 토글 연동)을 추가한다: 전략별 표(티켓·회차 수, 등수 관측/기대, 일치수 GOF p, 번호 상관 평균 r·p, 번호쌍 z·p, 최소 q, 판정)와 `feedback`·다음 실험 제안. 결과 입력·업로드 직후 `tracking` 쿼리 무효화로 즉시 갱신된다.
+- S8.9 (v1.16) **지속 개선 절차**(운영 원칙): 결과 입력 → 자동 대조(S8.2) → 정합성 분석(S8.7) → 유의 편차가 있는 전략만 §E9 실험(튠 구간을 최신 회차까지 확장)으로 재튜닝 → 홀드아웃 검증 통과 시에만 활성화(S9.4). 생성기 코드는 정합성 분석만으로 자동 변경하지 않는다(다중검정·look-ahead 방지).
 
 ---
 
@@ -544,7 +553,7 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 
 | 테이블 | 키 컬럼 |
 | :-- | :-- |
-| `draws` | draw_no, n1..n6, bonus, prize1, winners1, prize2, winners2, cohort |
+| `draws` | draw_no, n1..n6, bonus, prize1..prize5(1게임당 당첨금), winners1..winners5(당첨게임 수), cohort |
 | `analysis_run` | run_id, data_hash, cohort, preset, alpha, correction, mc_iterations, seed, versions, created_at |
 | `number_frequency` | run_id, number, role(main/bonus), observed, expected, residual, z, p, p_holm, q_bh, ci95_lo/hi |
 | `global_tests` | run_id, test(pearson_x2, joe_J, g_test, order_stat_Q, pairs_genest, mc_uniformity), statistic, df, p_asymptotic, p_mc |
@@ -618,6 +627,7 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | POST | `/api/v1/recommend/auto-register` | {target_draw_no?, seed?} → 무작위 빈도 상위 5 위치 → 전략별 최신 batch 티켓을 내 번호로 등록 (S4.10) |
 | POST | `/api/v1/recommend/sequential` | (S4.11) 모든 전략(또는 `strategies[]`) 순차 생성 — {strategies?, count?, seed?, max_shared?, save} → {sequence_id, target_draw_no, strategies, results[], failed[], total_tickets} |
 | GET | `/api/v1/recommend/history` · `/summary` | 추천 이력(필터: origin, strategy, batch_id, target_draw_no; limit ≤50000, offset) — 행마다 `past_wins` 포함 |
+| DELETE | `/api/v1/recommend/history` | (S4.12) 현재 회차(`target_draw_no` 미지정 시 최신+1) 사용자 생성 추천 초기화 → {target_draw_no, deleted_recommendations, deleted_outcomes} |
 | GET | `/api/v1/experiments/strategy-params` | 전략별 파라미터 스키마 |
 | POST | `/api/v1/experiments/runs` | {strategy, base_params?, parent_id?, search, n_candidates, tune_from/to, holdout_from/to, tickets_per_draw, seed, sync} → experiment |
 | GET | `/api/v1/experiments/runs[?strategy]` · `/{id}` · `/lineage?strategy=` · `/active` | 실험 목록·상세·계보(추이·Spearman)·활성 버전 |
@@ -625,9 +635,11 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | POST | `/api/v1/user/tickets/evaluate` | {numbers[6], bonus?} → 스코어카드 (`bonus` 는 int\|null 로 고정, 보너스 상세는 `bonus_info` {in_main, observed_as_main}; v1.9.1) |
 | GET/POST/DELETE | `/api/v1/user/tickets` | 저장 목록(`?target_draw_no=` 필터 v1.11; target_draw_no, S5.6 `dup_count`·`dup_labels`·`same_number_ticket_ids`·`duplicate` 포함; POST 는 같은 번호·회차면 병합) |
 | GET | `/api/v1/user/tickets/draws` | (S5.7) 현재 대상 회차 컨텍스트 — next_draw, latest_result_draw, active_target_draw, reason(next_recommended \| next_registered \| awaiting_next_recommendation \| none), draws[{target_draw_no, count, evaluated}] |
+| DELETE | `/api/v1/user/tickets?target_draw_no=` | (S5.9) 해당 대상 회차의 내 번호 전체 초기화(필수 파라미터) → {target_draw_no, deleted_tickets, deleted_outcomes} |
 | GET | `/api/v1/tracking/summary` | 전략별 누적 성과(일치수 분포·기대 대비·CI) |
 | GET | `/api/v1/tracking/outcomes` | 티켓 단위 대조 결과(필터: strategy, draw_no, source, origin; limit ≤50000, offset) — 행마다 `past_wins` 포함 |
 | GET | `/api/v1/tracking/outcomes/summary` | 필터 건수·회차/전략 목록·출처별 건수 |
+| GET | `/api/v1/tracking/consistency` | (S8.7) 추천 정합성 분석 — 필터 origin, strategy → 전략별 등수 분포·일치수 GOF·번호 상관·번호쌍 z·BH q·`feedback`·`next_experiment` |
 | GET | `/api/v1/tracking/pending` | 미추첨 대기 티켓 |
 | GET | `/api/v1/config` | 유효 설정(env) 조회 |
 
@@ -761,6 +773,12 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 
 | 버전 | 일자 | 내용 |
 | :-- | :-- | :-- |
+| 1.19 | 2026-09-21 | 사용자 요청(방어 코드): 결과가 입력된 회차의 추천·내 번호는 초기화 불가(API 400, 버튼 비활성) — 진행 예정 회차만 초기화(S4.12·S5.9); 성과 추적의 중복 '추첨 결과 입력 / 업로드' 섹션 주석 처리로 숨김(S8.6-1) |
+| 1.18 | 2026-09-21 | 사용자 요청: 설정/실행 '추첨 결과 직접 입력' 제목 우측에 과거 6회차 회차번호 칩 + 마우스 오버 툴팁 표(당첨번호·등위별 총 당첨금·당첨게임 수·1게임당 당첨금) 추가 (S1.7, 기존 `GET /data/draws` 재사용, 백엔드 변경 없음) |
+| 1.17.1 | 2026-09-21 | 사용자 승인: 1241·1242회 1·2등 금액이 총 당첨금으로 저장돼 있던 데이터를 총액÷당첨자 수(1게임당)로 정정(사전 백업, 성과 outcome 영향 없음) |
+| 1.17 | 2026-09-21 | 사용자 요청: 결과 입력에 **등위별 총 당첨금** 추가 — 1~3등은 총액÷당첨게임 수로 1게임당 당첨금 자동계산, 4·5등은 고정값(50,000·5,000) 유지(`/config` 에 `lotto_prize_rank3..5_default` 노출), 등수 열 × 항목 행의 전폭 표, 데이터 요약 강조·입력/업로드 패널 구분, 업로드 안내 문구를 버튼 우측으로 이동(S1.6) |
+| 1.16 | 2026-09-21 | 사용자 요청: (1) 설정/실행 결과 입력 재구성 — 직접 입력·파일 업로드 상하 배치, 파일 업로드 줄 한 줄화, 입력 항목을 실제 추첨결과 표 구조(1~5등 당첨게임 수·1게임당 당첨금)로 확장(S1.6, `draws.prize3..5/winners3..5`, Alembic); (2) 추천 티켓 전체의 실제 결과 대비 **정합성 분석**(등수 분포·일치수 GOF·번호 상관·번호쌍 상관·BH 보정·재튜닝 제안, S8.7~S8.9, `GET /tracking/consistency`) |
+| 1.15 | 2026-09-21 | 사용자 요청(버튼은 가로를 줄여 한 줄 배치 포함): **추천 초기화**(현재 회차 = 최신+1 의 origin=user 추천 삭제, S4.12, `DELETE /recommend/history`)와 **내 번호 초기화**(표시 중인 대상 회차의 내 번호 삭제, S5.9, `DELETE /user/tickets?target_draw_no=`) 버튼 추가. 연관 `ticket_outcome` 동반 삭제, 전체 회차 선택 시 내 번호 초기화 비활성 |
 | 1.14.3 | 2026-09-14 | 사용자 보고 "당첨 번호 회차(`LOTTO_RECENT_DRAWS`) 수정해도 미적용": uvicorn `--reload` 가 `backend/*.py` 만 감시해 `.env.local` 변경이 반영되지 않았음. Procfile `--reload-dir .. --reload-include .env --reload-include .env.local`(frontend/data/test 제외)로 **.env 저장 즉시 재기동**. 부수: `make local-restart` 가 이전 uvicorn 포트 해제 전 기동해 `Address already in use` 로 둘 다 종료되던 경쟁 수정(종료 대기) |
 | 1.14.2 | 2026-09-14 | 사용자 요청: S5.8 최근 당첨번호를 1열 5행이 아닌 **2열 그리드**(sm 이상)로 배치(3열 검토 후 사용자 결정 2열) |
 | 1.14.1 | 2026-09-14 | 사용자 요청: S5.8 최근 당첨번호 회차 수를 `.env` 로 관리 — `LOTTO_RECENT_DRAWS`(기본 5, 1–20) → `/config` `lotto_recent_draws` → 내 번호 화면 |

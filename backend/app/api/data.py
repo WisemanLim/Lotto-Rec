@@ -27,6 +27,12 @@ def _draw_out(d: Draw) -> DrawOut:
         winners1=d.winners1,
         prize2=d.prize2,
         winners2=d.winners2,
+        prize3=d.prize3,
+        winners3=d.winners3,
+        prize4=d.prize4,
+        winners4=d.winners4,
+        prize5=d.prize5,
+        winners5=d.winners5,
         cohort=cohort_of(d.draw_no),
     )
 
@@ -64,6 +70,12 @@ def add_draw(body: DrawIn, session: Session = Depends(get_session)) -> ImportOut
         winners1=body.winners1,
         prize2=body.prize2,
         winners2=body.winners2,
+        prize3=body.prize3,
+        winners3=body.winners3,
+        prize4=body.prize4,
+        winners4=body.winners4,
+        prize5=body.prize5,
+        winners5=body.winners5,
     )
     r = import_service.import_single(session, rec, overwrite=body.overwrite)
     return ImportOut(**r.as_dict())

@@ -71,7 +71,10 @@ class AutoRegisterIn(BaseModel):
 @router.post("/auto-register")
 def auto_register(body: AutoRegisterIn, session: Session = Depends(get_session)) -> dict:
     """S4.10 — 1..P 중 5개 무작위 추출을 대상 회차 수만큼 반복 → 빈도 상위 5 위치 → 전략별 최신 batch 티켓 등록."""
-    return rsvc.auto_register(session, target_draw_no=body.target_draw_no, seed=body.seed)
+    try:
+        return rsvc.auto_register(session, target_draw_no=body.target_draw_no, seed=body.seed)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @router.get("/history")
@@ -93,6 +96,18 @@ def history(
         batch_id=batch_id,
         target_draw_no=target_draw_no,
     )
+
+
+@router.delete("/history")
+def reset_history(
+    target_draw_no: int | None = Query(None, ge=1, description="미지정 시 현재 회차(최신 회차 + 1)"),
+    session: Session = Depends(get_session),
+) -> dict:
+    """S4.12 추천 초기화 — 현재 회차의 사용자 생성(origin=user) 추천만 삭제."""
+    try:
+        return rsvc.reset_recommendations(session, target_draw_no)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @router.get("/history/summary")

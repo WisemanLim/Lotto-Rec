@@ -11,6 +11,12 @@ class DrawIn(BaseModel):
     winners1: int | None = None
     prize2: int | None = None
     winners2: int | None = None
+    prize3: int | None = None
+    winners3: int | None = None
+    prize4: int | None = None
+    winners4: int | None = None
+    prize5: int | None = None
+    winners5: int | None = None
     overwrite: bool = False
 
     @field_validator("numbers")
@@ -29,6 +35,12 @@ class DrawOut(BaseModel):
     winners1: int | None
     prize2: int | None
     winners2: int | None
+    prize3: int | None = None
+    winners3: int | None = None
+    prize4: int | None = None
+    winners4: int | None = None
+    prize5: int | None = None
+    winners5: int | None = None
     cohort: str
 
 

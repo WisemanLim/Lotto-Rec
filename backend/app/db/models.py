@@ -29,6 +29,12 @@ class Draw(Base):
     winners1: Mapped[int | None] = mapped_column(Integer)
     prize2: Mapped[int | None] = mapped_column(Integer)
     winners2: Mapped[int | None] = mapped_column(Integer)
+    prize3: Mapped[int | None] = mapped_column(Integer)
+    winners3: Mapped[int | None] = mapped_column(Integer)
+    prize4: Mapped[int | None] = mapped_column(Integer)
+    winners4: Mapped[int | None] = mapped_column(Integer)
+    prize5: Mapped[int | None] = mapped_column(Integer)
+    winners5: Mapped[int | None] = mapped_column(Integer)
     source: Mapped[str] = mapped_column(String(32), default="import")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

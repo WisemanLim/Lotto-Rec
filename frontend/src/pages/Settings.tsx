@@ -25,6 +25,9 @@ const CONFIG_HELP: Record<string, string> = {
   lotto_min_effect_delta: '네트워크 엣지 최소 효과크기 |Lift*−1| (LOTTO_MIN_EFFECT_DELTA)',
   lotto_run_retention: '분석 run 보존 개수, 0=무제한 (LOTTO_RUN_RETENTION)',
   lotto_recent_draws: "내 번호 '저장된 번호' 타이틀 우측 최근 당첨번호 회차 수 (LOTTO_RECENT_DRAWS, 1–20)",
+  lotto_prize_rank3_default: '3등 1게임당 당첨금 기본값 — 회차에 실제 값이 없을 때만 사용 (LOTTO_PRIZE_RANK3_DEFAULT)',
+  lotto_prize_rank4_default: '4등 1게임당 고정 당첨금 (LOTTO_PRIZE_RANK4_DEFAULT)',
+  lotto_prize_rank5_default: '5등 1게임당 고정 당첨금 (LOTTO_PRIZE_RANK5_DEFAULT)',
   timezone: '표시 시간대 (LOTTO_TIMEZONE)',
 };
 
@@ -201,25 +204,28 @@ export default function Settings() {
           </table>
         )}
       </Section>
-      <Section title="데이터 요약">
+      <Section
+        title={<span className="text-lg font-bold text-indigo-800 dark:text-indigo-200">데이터 요약</span>}
+        className="!border-2 !border-indigo-400 !bg-indigo-50/60 shadow-sm dark:!border-indigo-500 dark:!bg-indigo-950/30"
+      >
         {summary.isLoading && <Loading />}
         {summary.isError && <ErrorBox error={summary.error} />}
         {summary.data && (
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm md:grid-cols-4">
-            <dt className="text-neutral-500">총 회차</dt>
-            <dd className="tabular-nums">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-md border border-indigo-200 bg-white p-3 text-sm dark:border-indigo-800 dark:bg-neutral-900 md:grid-cols-4">
+            <dt className="font-medium text-neutral-600 dark:text-neutral-300">총 회차</dt>
+            <dd className="font-bold tabular-nums">
               {summary.data.total_draws.toLocaleString()} ({summary.data.min_draw}–{summary.data.max_draw})
             </dd>
-            <dt className="text-neutral-500">
+            <dt className="font-medium text-neutral-600 dark:text-neutral-300">
               <Term id="cohort">군 A / B</Term>
             </dt>
-            <dd className="tabular-nums">
+            <dd className="font-bold tabular-nums">
               {summary.data.cohort_a_count} / {summary.data.cohort_b_count} (경계 {summary.data.train_end_draw})
             </dd>
-            <dt className="text-neutral-500">누락 회차</dt>
-            <dd>{summary.data.missing_draws.length ? summary.data.missing_draws.join(', ') : '없음'}</dd>
-            <dt className="text-neutral-500">정합성</dt>
-            <dd>
+            <dt className="font-medium text-neutral-600 dark:text-neutral-300">누락 회차</dt>
+            <dd className="font-bold">{summary.data.missing_draws.length ? summary.data.missing_draws.join(', ') : '없음'}</dd>
+            <dt className="font-medium text-neutral-600 dark:text-neutral-300">정합성</dt>
+            <dd className="font-bold">
               {summary.data.integrity.contiguous ? '연속' : '불연속'} · {summary.data.integrity.all_sorted ? '정렬' : '비정렬'} · 무효 {summary.data.integrity.invalid_rows.length}
             </dd>
           </dl>

@@ -35,3 +35,11 @@ def test_timestamps_carry_utc_offset_and_timezone_config(seeded: None) -> None: 
 
     assert to_iso(None) is None
     assert to_iso(datetime(2026, 9, 8, 6, 2, 55)) == "2026-09-08T06:02:55+00:00"
+
+
+def test_config_exposes_fixed_prize_defaults() -> None:
+    """S1.6 (v1.17): 4·5등 고정 당첨금 기본값을 프론트 결과 입력에 전달."""
+    body = client.get("/api/v1/config").json()
+    assert body["lotto_prize_rank4_default"] == 50_000
+    assert body["lotto_prize_rank5_default"] == 5_000
+    assert body["lotto_prize_rank3_default"] > 0
