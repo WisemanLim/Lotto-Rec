@@ -98,8 +98,8 @@ test('"내 번호로 자동 등록" 버튼이 필터 초기화 우측에 있고 
         posts.push({ url, body: JSON.parse(String(init.body)) });
         return new Response(
           JSON.stringify({
-            target_draw_no: 1241, rounds: 1241, pool: 10, pick: 5, seed: 42, counts: {}, selected: [2, 4, 5, 7, 9],
-            strategies: [{ strategy: 'uniform', label: '균등', batch_id: 'abcdefgh-1', n_tickets: 10, registered: [{ position: 2, rec_id: 12, ticket: [1, 2, 3, 4, 5, 6], ticket_id: 90 }], merged_duplicates: [], missing_positions: [] }],
+            target_draw_no: 1241, rounds: 1241, pool: 10, pick: 5, seed: 42, counts: {}, selected: [2, 4, 5, 7, 9], exclude_numbers: [],
+            strategies: [{ strategy: 'uniform', label: '균등', batch_id: 'abcdefgh-1', n_tickets: 10, registered: [{ position: 2, rec_id: 12, ticket: [1, 2, 3, 4, 5, 6], ticket_id: 90 }], merged_duplicates: [], missing_positions: [], excluded_positions: [] }],
             total_registered: 1, total_merged: 0, policy: 'p',
           }),
           { status: 200, headers: { 'content-type': 'application/json' } },

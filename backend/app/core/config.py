@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     env: str = "local"
 
     # 추천 — 로또번호 추천 갯수
-    lotto_number_recommendation_count: int = Field(default=10, ge=1, le=50)
+    lotto_number_recommendation_count: int = Field(default=10, ge=1, le=200)
 
     # 게임 규칙
     lotto_pool_size: int = 45

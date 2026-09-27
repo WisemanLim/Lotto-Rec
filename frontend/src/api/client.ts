@@ -850,6 +850,7 @@ export interface RecommendHistoryItem {
 export interface AutoRegisterIn {
   target_draw_no?: number;
   seed?: number;
+  exclude_numbers?: number[];
 }
 export interface AutoRegisterTicket {
   position: number;
@@ -865,6 +866,7 @@ export interface AutoRegisterStrategy {
   registered: AutoRegisterTicket[];
   merged_duplicates: (AutoRegisterTicket & { dup_count: number })[];
   missing_positions: number[];
+  excluded_positions: AutoRegisterTicket[];
 }
 export interface AutoRegisterResult {
   target_draw_no: number;
@@ -874,6 +876,7 @@ export interface AutoRegisterResult {
   seed: number;
   counts: Record<string, number>;
   selected: number[];
+  exclude_numbers: number[];
   strategies: AutoRegisterStrategy[];
   total_registered: number;
   total_merged: number;

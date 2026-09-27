@@ -255,8 +255,12 @@ def generate(
     seed: int,
     max_shared: int | None = None,
     params: dict | None = None,
+    exclude: set[int] | None = None,
 ) -> tuple[list[list[int]], dict]:
-    """전략별 티켓 n 개. 반환: (tickets, meta). params 는 STRATEGY_PARAMS 기준 병합."""
+    """전략별 티켓 n 개. 반환: (tickets, meta). params 는 STRATEGY_PARAMS 기준 병합.
+
+    exclude 가 있으면 그 번호가 하나라도 포함된 조합은 생성하지 않는다(거부 표본추출, S4.14).
+    """
     if strategy not in STRATEGIES:
         raise ValueError(f"알 수 없는 전략: {strategy}")
     p = merge_params(strategy, params)
@@ -275,7 +279,9 @@ def generate(
     if strategy in ("low_competition", "hybrid"):
         if ctx.winners_model is None or "coef" not in ctx.winners_model:
             strategy_eff = "uniform" if strategy == "low_competition" else "bayesian_shrink"
-            tks, m2 = generate(strategy_eff, ctx, n_tickets, seed, max_shared, p if strategy == "hybrid" else None)
+            tks, m2 = generate(
+                strategy_eff, ctx, n_tickets, seed, max_shared, p if strategy == "hybrid" else None, exclude
+            )
             m2.update({"strategy": strategy, "params": p, "fallback": f"winners_model 없음 → {strategy_eff}"})
             return tks, m2
         from app.core.winners_model import predict_winners_batch
@@ -283,7 +289,10 @@ def generate(
         base_w = w_bayes(ctx, p) if strategy == "hybrid" else w_uniform(ctx, p)
         pool = int(p.get("candidate_pool", 3000))
         cands = np.array([weighted_sample_without_replacement(rng, base_w, k) for _ in range(pool)])
-        if strategy == "hybrid" and ctx.null_features is not None:
+        if exclude:  # 제외 번호는 항상 강제(하드 제약) — 부족하면 후보가 n_tickets 보다 적게 남을 수 있음
+            keep_ex = np.array([not exclude.intersection(c.tolist()) for c in cands])
+            cands = cands[keep_ex]
+        if strategy == "hybrid" and ctx.null_features is not None and len(cands) > 0:
             keep = np.array([_typical(c, ctx, p.get("hdr", 0.8)) for c in cands])
             if keep.sum() >= n_tickets:
                 cands = cands[keep]
@@ -316,6 +325,8 @@ def generate(
             t = _sequential_with_lift(rng, ctx, base_w, lift, lift_power if lift_power > 0 else 1.0, floor)
         else:
             t = weighted_sample_without_replacement(rng, base_w, k)
+        if exclude and exclude.intersection(t.tolist()):
+            continue
         if strategy == "pattern_typical" and not _typical(t, ctx, p.get("hdr", 0.8)):
             continue
         if any(np.array_equal(t, c) for c in tickets):
@@ -325,5 +336,6 @@ def generate(
         tickets.append(t)
     meta["attempts"] = attempts
     if len(tickets) < n_tickets:
-        meta["warning"] = f"커버리지 제약으로 {len(tickets)}개만 생성"
+        reason = "제외 번호·커버리지 제약" if exclude else "커버리지 제약"
+        meta["warning"] = f"{reason}으로 {len(tickets)}개만 생성"
     return [t.tolist() for t in tickets], meta

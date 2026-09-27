@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.db.base import get_session
@@ -13,13 +13,25 @@ from app.services import seed_search_service as ssvc
 router = APIRouter(prefix="/recommend", tags=["recommend"])
 
 
+def _check_exclude_range(v: list[int] | None) -> list[int] | None:
+    """제외 번호 공용 검증(S4.10·S4.14) — 1~45 범위만 허용."""
+    if v is not None and any(not (1 <= x <= 45) for x in v):
+        raise ValueError("제외 번호는 1~45 범위")
+    return v
+
+
 class RecommendIn(BaseModel):
     strategy: str = Field("hybrid")
-    count: int | None = Field(None, ge=1, le=50, description="미지정 시 LOTTO_NUMBER_RECOMMENDATION_COUNT")
+    count: int | None = Field(None, ge=1, le=200, description="미지정 시 LOTTO_NUMBER_RECOMMENDATION_COUNT")
     seed: int | None = None
     max_shared: int | None = Field(None, ge=0, le=6, description="티켓 간 최대 공유 번호(커버리지)")
     include_control: bool = True
     save: bool = True
+    exclude_numbers: list[int] | None = Field(
+        None, description="이 번호가 하나라도 포함된 조합은 생성하지 않음 (S4.14)"
+    )
+
+    _valid_exclude = field_validator("exclude_numbers")(_check_exclude_range)
 
 
 @router.get("/strategies")
@@ -38,6 +50,7 @@ def recommend(body: RecommendIn, session: Session = Depends(get_session)) -> dic
             max_shared=body.max_shared,
             include_control=body.include_control,
             save=body.save,
+            exclude_numbers=body.exclude_numbers,
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
@@ -45,10 +58,15 @@ def recommend(body: RecommendIn, session: Session = Depends(get_session)) -> dic
 
 class SequentialIn(BaseModel):
     strategies: list[str] | None = Field(None, description="미지정 시 카탈로그 전체(순서대로)")
-    count: int | None = Field(None, ge=1, le=50)
+    count: int | None = Field(None, ge=1, le=200)
     seed: int | None = None
     max_shared: int | None = Field(None, ge=0, le=6)
     save: bool = True
+    exclude_numbers: list[int] | None = Field(
+        None, description="이 번호가 하나라도 포함된 조합은 생성하지 않음 (S4.14)"
+    )
+
+    _valid_exclude = field_validator("exclude_numbers")(_check_exclude_range)
 
 
 @router.post("/sequential")
@@ -61,19 +79,27 @@ def recommend_sequential(body: SequentialIn, session: Session = Depends(get_sess
         seed=body.seed,
         max_shared=body.max_shared,
         save=body.save,
+        exclude_numbers=body.exclude_numbers,
     )
 
 
 class AutoRegisterIn(BaseModel):
     target_draw_no: int | None = Field(None, ge=1, description="미지정 시 최신 회차 + 1")
     seed: int | None = Field(None, ge=0, description="미지정 시 무작위(응답에 사용 seed 포함)")
+    exclude_numbers: list[int] | None = Field(
+        None, description="이 번호가 하나라도 포함된 (전략, 위치) 조합은 등록하지 않음 (v1.28)"
+    )
+
+    _valid_exclude = field_validator("exclude_numbers")(_check_exclude_range)
 
 
 @router.post("/auto-register")
 def auto_register(body: AutoRegisterIn, session: Session = Depends(get_session)) -> dict:
     """S4.10 — 1..P 중 5개 무작위 추출을 대상 회차 수만큼 반복 → 빈도 상위 5 위치 → 전략별 최신 batch 티켓 등록."""
     try:
-        return rsvc.auto_register(session, target_draw_no=body.target_draw_no, seed=body.seed)
+        return rsvc.auto_register(
+            session, target_draw_no=body.target_draw_no, seed=body.seed, exclude_numbers=body.exclude_numbers
+        )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 

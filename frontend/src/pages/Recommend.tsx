@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type BacktestResult, type RecommendIn, type RecommendResponse, type RecommendTicket, type SequentialIn } from '../api/client';
 import { useRun } from '../hooks/useRun';
-import { BallRow } from '../components/LottoBall';
+import LottoBall, { BallRow } from '../components/LottoBall';
 import PolicyBanner from '../components/PolicyBanner';
 import VerdictBadge from '../components/VerdictBadge';
 import Term from '../components/Term';
@@ -16,6 +16,7 @@ import { fmtCI, fmtDate, fmtNum, fmtP, fmtParams, fmtSigned } from '../lib/forma
 import type { AutoRegisterResult, RecommendHistoryItem } from '../api/client';
 
 // S4.13 SEED 값 생성 — 희망 등수 선택지·표시 라벨 (rank_of 와 동일 기준: 1등 6개 … 5등 3개)
+const NUMS = Array.from({ length: 45 }, (_, i) => i + 1);
 const RANK_OPTIONS = [
   { v: '1', label: '1등 (6개 일치)' },
   { v: '2', label: '2등 (5개+보너스)' },
@@ -134,7 +135,8 @@ function AutoRegisterSummary({ r }: { r: AutoRegisterResult }) {
     <div className="mb-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs dark:border-emerald-800 dark:bg-emerald-950/40" role="status" aria-label="자동 등록 결과">
       <div className="mb-1 font-medium text-emerald-800 dark:text-emerald-200">
         내 번호로 자동 등록 — 대상 {r.target_draw_no}회 · {r.rounds.toLocaleString()}회 반복(1..{r.pool} 중 {r.pick}개) · seed {r.seed} · 선택 위치{' '}
-        <span className="font-semibold tabular-nums">{r.selected.join(', ')}</span> · 등록 {r.total_registered}장 / ★ 중복 병합 {r.total_merged}장 ·{' '}
+        <span className="font-semibold tabular-nums">{r.selected.join(', ')}</span> · 등록 {r.total_registered}장 / ★ 중복 병합 {r.total_merged}장
+        {r.exclude_numbers.length > 0 && <> · 제외 번호 [{r.exclude_numbers.join(', ')}]</>} ·{' '}
         <Link to="/my-numbers" className="underline">
           내 번호 보기
         </Link>
@@ -145,6 +147,7 @@ function AutoRegisterSummary({ r }: { r: AutoRegisterResult }) {
             <span className="font-medium">{s.label}</span> ({s.batch_id.slice(0, 8)} · {s.n_tickets}장): 등록 {s.registered.length}
             {s.merged_duplicates.length > 0 && ` · ★ 중복 병합 ${s.merged_duplicates.length}`}
             {s.missing_positions.length > 0 && ` · 없는 위치 ${s.missing_positions.join(',')}`}
+            {s.excluded_positions.length > 0 && ` · 제외됨 ${s.excluded_positions.length}(#${s.excluded_positions.map((t) => t.position).join(',#')})`}
             {s.registered.length > 0 && (
               <span className="ml-1 text-neutral-500">{s.registered.map((t) => `#${t.position}[${t.ticket.join(' ')}]`).join(' ')}</span>
             )}
@@ -309,8 +312,15 @@ export default function Recommend() {
           ? `${autoDraw}회에 저장된 추천이 없습니다`
           : null;
   // S4.10 내 번호로 자동 등록 — 1..P 중 5개 무작위 추출을 대상 회차 수만큼 반복 → 빈도 상위 5 위치 → 전략별 최신 batch 티켓 등록
+  // v1.28 제외 번호 — 선택된 번호가 포함된 (전략, 위치) 조합은 등록하지 않는다(화면 상태만, 저장 없음)
+  const [excludeNumbers, setExcludeNumbers] = useState<number[]>([]);
+  const toggleExclude = (n: number) => setExcludeNumbers((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n].sort((a, b) => a - b)));
   const autoReg = useMutation({
-    mutationFn: () => api.recommend.autoRegister({ target_draw_no: hTarget ? Number(hTarget) : undefined }),
+    mutationFn: () =>
+      api.recommend.autoRegister({
+        target_draw_no: hTarget ? Number(hTarget) : undefined,
+        exclude_numbers: excludeNumbers.length ? excludeNumbers : undefined,
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['user'] });
       void qc.invalidateQueries({ queryKey: ['tracking'] });
@@ -358,9 +368,10 @@ export default function Recommend() {
           max_shared: maxShared ? Number(maxShared) : null,
           include_control: includeControl,
           save,
+          exclude_numbers: excludeNumbers.length ? excludeNumbers : undefined,
         });
       } else if (pendingAction === 'sequential') {
-        seq.mutate({ count: count ? Number(count) : null, seed: seedJob.data.seed, max_shared: maxShared ? Number(maxShared) : null, save });
+        seq.mutate({ count: count ? Number(count) : null, seed: seedJob.data.seed, max_shared: maxShared ? Number(maxShared) : null, save, exclude_numbers: excludeNumbers.length ? excludeNumbers : undefined });
       }
       setPendingAction(null);
     } else if (seedJob.data.status === 'stopped') {
@@ -373,9 +384,10 @@ export default function Recommend() {
           max_shared: maxShared ? Number(maxShared) : null,
           include_control: includeControl,
           save,
+          exclude_numbers: excludeNumbers.length ? excludeNumbers : undefined,
         });
       } else if (pendingAction === 'sequential') {
-        seq.mutate({ count: count ? Number(count) : null, seed: seed ? Number(seed) : null, max_shared: maxShared ? Number(maxShared) : null, save });
+        seq.mutate({ count: count ? Number(count) : null, seed: seed ? Number(seed) : null, max_shared: maxShared ? Number(maxShared) : null, save, exclude_numbers: excludeNumbers.length ? excludeNumbers : undefined });
       }
       setPendingAction(null);
     } else if (seedJob.data.status === 'error') {
@@ -424,6 +436,7 @@ export default function Recommend() {
       seed: seed ? Number(seed) : null,
       max_shared: maxShared ? Number(maxShared) : null,
       save,
+      exclude_numbers: excludeNumbers.length ? excludeNumbers : undefined,
     });
   };
   const submit = (e: React.FormEvent) => {
@@ -437,6 +450,7 @@ export default function Recommend() {
       max_shared: maxShared ? Number(maxShared) : null,
       include_control: includeControl,
       save,
+      exclude_numbers: excludeNumbers.length ? excludeNumbers : undefined,
     });
   };
   const res: RecommendResponse | undefined = m.data;
@@ -534,10 +548,31 @@ export default function Recommend() {
               <div className="mt-1 text-xs text-neutral-500">기대: {s.expectation}</div>
             </button>
           ))}
+          {/* v1.29(S4.14) 제외 번호 — 마지막 전략 카드 우측 빈 공간에 배치, '추천 생성'·'추천 생성(순차)'·'내 번호로 자동 등록' 공통 적용 */}
+          <div className="lg:col-span-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm font-medium">
+                제외 번호 <span className="font-normal text-neutral-500">('추천 생성'·'추천 생성(순차)'·'내 번호로 자동 등록' 시 이 번호가 포함된 조합은 생성·등록하지 않습니다)</span>
+              </span>
+              {excludeNumbers.length > 0 && (
+                <span className="text-xs text-neutral-600 dark:text-neutral-300">
+                  선택 {excludeNumbers.length}개: {excludeNumbers.join(', ')}
+                  <button type="button" className="ml-2 underline" onClick={() => setExcludeNumbers([])}>
+                    지우기
+                  </button>
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-9 gap-1.5 sm:grid-cols-15" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(2rem, 1fr))' }} role="group" aria-label="제외 번호 선택">
+              {NUMS.map((n) => (
+                <LottoBall key={n} n={n} size="sm" onClick={() => toggleExclude(n)} selected={excludeNumbers.includes(n)} />
+              ))}
+            </div>
+          </div>
         </div>
         <form onSubmit={submit} className="mt-4 flex flex-wrap items-start gap-x-2 gap-y-3">
           <Field className="shrink-0" label="추천 개수" hint={`기본 ${config.data?.lotto_number_recommendation_count ?? '—'} (.env)`}>
-            <input className={`${inputCls} !w-16`} type="number" min={1} max={50} value={count} onChange={(e) => setCount(e.target.value)} />
+            <input className={`${inputCls} !w-16`} type="number" min={1} max={200} value={count} onChange={(e) => setCount(e.target.value)} />
           </Field>
           <Field className="shrink-0" label="seed" hint={`빈칸 = 기본 ${config.data?.lotto_random_seed ?? ''}`}>
             <input className={`${inputCls} !w-28`} type="number" value={seed} onChange={(e) => setSeed(e.target.value)} />
@@ -730,7 +765,8 @@ export default function Recommend() {
               disabled={autoReg.isPending || autoBlock !== null}
               onClick={() => {
                 const d = hTarget ? `${hTarget}회` : '최신 회차 + 1';
-                if (window.confirm(`대상 회차 ${d} 의 전략별 최신 추천 티켓 중 무작위 빈도 상위 5개 위치를 내 번호로 등록할까요?\n이미 등록된 번호는 새 행 없이 ★ 중복(×n)으로 병합됩니다.`))
+                const excl = excludeNumbers.length ? `\n제외 번호 [${excludeNumbers.join(', ')}] 가 포함된 조합은 등록하지 않습니다.` : '';
+                if (window.confirm(`대상 회차 ${d} 의 전략별 최신 추천 티켓 중 무작위 빈도 상위 5개 위치를 내 번호로 등록할까요?\n이미 등록된 번호는 새 행 없이 ★ 중복(×n)으로 병합됩니다.${excl}`))
                   autoReg.mutate();
               }}
             >

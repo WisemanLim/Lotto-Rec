@@ -99,3 +99,27 @@ def test_seed_search_env_update_skipped_when_file_missing(seeded: None, client, 
     r = client.post("/api/v1/recommend/seed-search", json={"target_draw_no": 1000, "target_rank": 5})
     done = _poll(client, r.json()["job_id"])
     assert done["status"] == "done" and done["env_updated"] is False
+
+
+def test_seed_search_schema_has_no_exclude_numbers_field() -> None:
+    """v1.30 — SEED 값 생성은 제외 번호(S4.10/S4.14)를 지원하지 않는다: 직전 실제 회차의 실제 당첨 번호를
+    무작위로 맞히는 탐색이므로, 제외 번호를 강제하면 그 번호가 실제 당첨 번호 중 하나일 때 목표 등수를
+    영원히 달성할 수 없다. 요청 스키마에 필드 자체가 없음을 구조적으로 보증한다."""
+    from app.api.recommend import SeedSearchIn
+
+    assert "exclude_numbers" not in SeedSearchIn.model_fields
+
+
+def test_seed_search_ignores_exclude_numbers_even_if_sent(seeded: None, client) -> None:  # noqa: ANN001
+    """제외 번호를 억지로 함께 보내도(스키마 밖 필드라 조용히 무시) — 직전 회차 실제 번호를 모두 '제외'로
+    보내더라도 탐색은 정상적으로 그 실제 번호를 맞혀 완료된다(적용됐다면 목표를 영원히 달성 못 했을 것)."""
+    draw = client.get("/api/v1/data/draws/999").json()
+    r = client.post(
+        "/api/v1/recommend/seed-search",
+        json={"target_draw_no": 1000, "target_rank": 5, "exclude_numbers": draw["numbers"]},
+    )
+    assert r.status_code == 200, r.text
+    assert "exclude_numbers" not in r.json()
+    done = _poll(client, r.json()["job_id"])
+    assert done["status"] == "done"
+    assert set(done["matched_ticket"]) & set(draw["numbers"])  # 실제 번호가 포함된 조합을 맞힘 (제외 미적용 증명)

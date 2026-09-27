@@ -60,3 +60,48 @@ def test_auto_register_rejected_for_completed_draw(seeded: None, client) -> None
     for t in (1, latest):
         r = client.post("/api/v1/recommend/auto-register", json={"target_draw_no": t, "seed": 1})
         assert r.status_code == 400 and "결과가 입력된 회차" in r.json()["detail"]
+
+
+def test_auto_register_excludes_tickets_with_excluded_numbers(seeded: None, client, session, monkeypatch) -> None:  # noqa: ANN001
+    """v1.28 — exclude_numbers 가 포함된 (전략, 위치) 조합은 등록하지 않는다(대체 없이 skip)."""
+    from app.core.config import settings
+    from app.db.models import Recommendation
+
+    monkeypatch.setattr(settings, "lotto_number_recommendation_count", 1)  # pool=1 → 선택 위치는 항상 1
+    target = client.get("/api/v1/data/summary").json()["max_draw"] + 1
+
+    rec1 = Recommendation(
+        batch_id="exc-1", strategy="uniform", seed=1, ticket=[1, 2, 3, 4, 5, 6], target_draw_no=target, origin="user"
+    )
+    session.add(rec1)
+    session.commit()
+    r1 = client.post("/api/v1/recommend/auto-register", json={"seed": 1})
+    assert r1.status_code == 200
+    s1 = next(s for s in r1.json()["strategies"] if s["strategy"] == "uniform")
+    assert len(s1["registered"]) == 1 and s1["excluded_positions"] == []
+
+    rec2 = Recommendation(
+        batch_id="exc-2", strategy="uniform", seed=1, ticket=[7, 8, 9, 10, 11, 12], target_draw_no=target, origin="user"
+    )
+    session.add(rec2)
+    session.commit()
+    r2 = client.post("/api/v1/recommend/auto-register", json={"seed": 1, "exclude_numbers": [9]})
+    assert r2.status_code == 200
+    body = r2.json()
+    assert body["exclude_numbers"] == [9]
+    s2 = next(s for s in body["strategies"] if s["strategy"] == "uniform")
+    assert s2["batch_id"] == "exc-2"  # 최신 batch
+    assert s2["registered"] == [] and s2["missing_positions"] == []
+    assert s2["excluded_positions"] == [{"position": 1, "rec_id": rec2.rec_id, "ticket": [7, 8, 9, 10, 11, 12]}]
+    after = client.get(f"/api/v1/user/tickets?target_draw_no={target}").json()
+    assert not any(t["numbers"] == [7, 8, 9, 10, 11, 12] for t in after)  # 제외된 티켓은 저장되지 않음
+
+    # 제외 번호가 없는(포함 안 된) 값이면 정상 등록
+    r3 = client.post("/api/v1/recommend/auto-register", json={"seed": 1, "exclude_numbers": [44, 45]})
+    s3 = next(s for s in r3.json()["strategies"] if s["strategy"] == "uniform")
+    assert len(s3["registered"]) == 1 and s3["excluded_positions"] == []
+
+
+def test_auto_register_exclude_numbers_out_of_range_422(seeded: None, client) -> None:  # noqa: ANN001
+    assert client.post("/api/v1/recommend/auto-register", json={"exclude_numbers": [0]}).status_code == 422
+    assert client.post("/api/v1/recommend/auto-register", json={"exclude_numbers": [46]}).status_code == 422

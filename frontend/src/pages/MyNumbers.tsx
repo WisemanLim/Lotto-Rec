@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type TicketDraws, type TicketIn, type UserTicket } from '../api/client';
 import { useRun } from '../hooks/useRun';
@@ -41,7 +41,13 @@ export default function MyNumbers() {
     queryFn: () => api.user.tickets(200, effectiveDraw === 'all' ? null : effectiveDraw),
     enabled: effectiveDraw !== null,
   });
-  const evaluate = useMutation({ mutationFn: (b: TicketIn) => api.user.evaluate(b) });
+  // S5.11 평가 클릭 시 아래 '저장된 번호' 목록을 추첨 결과 순(1등→5등→낙첨→대기)으로 재정렬(표시 전용)
+  const [sortByResult, setSortByResult] = useState(false);
+  useEffect(() => setSortByResult(false), [effectiveDraw]); // 회차 필터 변경 시 정렬 해제
+  const evaluate = useMutation({
+    mutationFn: (b: TicketIn) => api.user.evaluate(b),
+    onSuccess: () => setSortByResult(true),
+  });
   const save = useMutation({
     mutationFn: (b: TicketIn) => api.user.save(b),
     onSuccess: () => {
@@ -100,8 +106,18 @@ export default function MyNumbers() {
   });
   const hitCounts: Record<number, number> = {};
   for (const d of Array.isArray(recent6.data) ? recent6.data : []) for (const n of d.numbers) hitCounts[n] = (hitCounts[n] ?? 0) + 1;
+  // S5.11 결과순 정렬(1등→5등→낙첨→대기). 활성화되면 ★ 추첨 시도 정렬(S5.10)보다 우선한다
+  const resultTier = (t: UserTicket): number => {
+    const o = t.outcomes[0];
+    if (!o) return 7; // 추첨 대기
+    return o.rank === 0 ? 6 : o.rank; // 1~5등 그대로, 낙첨(0)은 6
+  };
   // ★ 선택 티켓을 상단으로 (표시 전용 — 위치 추첨의 기준 순서는 원래 목록)
-  const shownTickets = lottery ? [...(tickets.data ?? [])].sort((a, b) => Number(lottery.ids.has(b.ticket_id)) - Number(lottery.ids.has(a.ticket_id))) : (tickets.data ?? []);
+  const shownTickets = sortByResult
+    ? [...(tickets.data ?? [])].sort((a, b) => resultTier(a) - resultTier(b))
+    : lottery
+      ? [...(tickets.data ?? [])].sort((a, b) => Number(lottery.ids.has(b.ticket_id)) - Number(lottery.ids.has(a.ticket_id)))
+      : (tickets.data ?? []);
   // v1.21 선택 개수: .env LOTTO_LOTTERY_PICK_COUNT(/config, 기본 5)가 초깃값, 입력 박스로 세션 단위 수정 (null = 기본값 사용)
   const defaultPick = config.data?.lotto_lottery_pick_count ?? 5;
   const [pickInput, setPickInput] = useState<string | null>(null);
@@ -132,6 +148,7 @@ export default function MyNumbers() {
                 setPicked([]);
                 setBonus(null);
                 evaluate.reset();
+                setSortByResult(false);
               }}
             >
               초기화
@@ -290,6 +307,11 @@ export default function MyNumbers() {
             </p>
           )}
           </div>
+        )}
+        {sortByResult && tickets.data && tickets.data.length > 0 && (
+          <p className="mb-2 text-xs text-indigo-700 dark:text-indigo-300" role="status" aria-label="결과순 정렬 안내">
+            추첨 결과 순으로 정렬했습니다(1등 → 5등 → 낙첨 → 추첨 대기). 화면 표시만이며, 회차 필터를 바꾸거나 번호 선택을 초기화하면 원래 순서로 돌아갑니다.
+          </p>
         )}
         {tickets.isLoading && <Loading />}
         {tickets.isError && <ErrorBox error={tickets.error} />}

@@ -49,10 +49,12 @@ def recommend(
     max_shared: int | None = None,
     include_control: bool = True,
     save: bool = True,
+    exclude_numbers: list[int] | None = None,
 ) -> dict:
     count = count or settings.lotto_number_recommendation_count
-    if not 1 <= count <= 50:
-        raise ValueError("추천 개수는 1~50")
+    if not 1 <= count <= 200:
+        raise ValueError("추천 개수는 1~200")
+    exclude = set(exclude_numbers) if exclude_numbers else None
     seed = settings.lotto_random_seed if seed is None else seed
     ctx = build_context(session)
     past = PastWinIndex(session)
@@ -61,7 +63,7 @@ def recommend(
     strategies = [strategy] + (["uniform"] if include_control and strategy != "uniform" else [])
     for i, s in enumerate(strategies):
         params_used, active_exp = xsvc.active_params(session, s)
-        tickets, meta = strat.generate(s, ctx, count, seed + i, max_shared, params_used)
+        tickets, meta = strat.generate(s, ctx, count, seed + i, max_shared, params_used, exclude)
         cards = [
             scorecard(
                 t,
@@ -140,6 +142,7 @@ def recommend_sequential(
     seed: int | None = None,
     max_shared: int | None = None,
     save: bool = True,
+    exclude_numbers: list[int] | None = None,
 ) -> dict:
     """S4.11 — 카탈로그 순서로 모든 전략을 같은 옵션으로 생성. 전략별 batch, control 미포함, 실패는 계속·보고."""
     order = list(strategies) if strategies else list(strat.STRATEGIES.keys())
@@ -159,6 +162,7 @@ def recommend_sequential(
                     max_shared=max_shared,
                     include_control=False,
                     save=save,
+                    exclude_numbers=exclude_numbers,
                 )
             )
         except ValueError as e:
@@ -276,10 +280,18 @@ def save_user_ticket(
 
 
 def auto_register(
-    session: Session, *, target_draw_no: int | None = None, seed: int | None = None, pick: int = 5
+    session: Session,
+    *,
+    target_draw_no: int | None = None,
+    seed: int | None = None,
+    pick: int = 5,
+    exclude_numbers: list[int] | None = None,
 ) -> dict:
     """S4.10 — 1..P 중 pick 개 무작위 추출을 대상 회차 수만큼 반복 → 빈도 상위 pick 위치 →
-    전략별 최신 batch 티켓을 내 번호로 등록. 동일 번호·대상 회차가 이미 있으면 병합(S5.6, dup_count↑)."""
+    전략별 최신 batch 티켓을 내 번호로 등록. 동일 번호·대상 회차가 이미 있으면 병합(S5.6, dup_count↑).
+    exclude_numbers 가 있으면 해당 번호가 하나라도 포함된 (전략, 위치) 조합은 등록하지 않는다(v1.28,
+    대체 위치를 다시 뽑지 않음 — 전략별 등록 수가 pick 보다 적을 수 있음)."""
+    exclude = set(exclude_numbers or [])
     ctx = build_context(session)
     target = target_draw_no or ctx.draw_no_next
     latest_result = max_draw_no(session) or 0
@@ -314,12 +326,15 @@ def auto_register(
     for s_id, batches in by_strategy.items():
         latest = max(batches.values(), key=lambda rows: rows[-1].rec_id)
         label = strat.STRATEGIES.get(s_id, {}).get("label", s_id)
-        registered, merged, missing = [], [], []
+        registered, merged, missing, excluded = [], [], [], []
         for pos in selected:
             if pos > len(latest):
                 missing.append(pos)
                 continue
             r = latest[pos - 1]
+            if exclude and exclude.intersection(r.ticket):
+                excluded.append({"position": pos, "rec_id": r.rec_id, "ticket": r.ticket})
+                continue
             key = tuple(sorted(r.ticket))
             ut = save_user_ticket(session, r.ticket, None, f"추천 {label} #{r.rec_id}", target, ctx=ctx, commit=False)
             session.flush()
@@ -340,6 +355,7 @@ def auto_register(
                 "registered": registered,
                 "merged_duplicates": merged,
                 "missing_positions": missing,
+                "excluded_positions": excluded,
             }
         )
     session.commit()
@@ -351,6 +367,7 @@ def auto_register(
         "seed": seed,
         "counts": {str(n): int(counts[n]) for n in range(1, pool + 1)},
         "selected": selected,
+        "exclude_numbers": sorted(exclude),
         "strategies": out_strats,
         "total_registered": total_registered,
         "total_merged": total_merged,
