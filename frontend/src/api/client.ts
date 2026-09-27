@@ -82,6 +82,7 @@ export interface AppConfig {
   lotto_run_retention?: number;
   lotto_recent_draws?: number;
   lotto_lottery_pick_count?: number;
+  lotto_seed_search_max_iter?: number;
   lotto_prize_rank3_default?: number;
   lotto_prize_rank4_default?: number;
   lotto_prize_rank5_default?: number;
@@ -809,6 +810,27 @@ export interface SequentialResponse {
   total_tickets: number;
 }
 
+// S4.13 SEED 값 생성 (무작위 탐색)
+export interface SeedSearchIn {
+  target_draw_no?: number | null;
+  target_rank: number; // 1–5
+}
+export interface SeedSearchJob {
+  job_id: string;
+  status: 'running' | 'done' | 'stopped' | 'error';
+  target_draw_no: number;
+  compare_draw_no: number;
+  target_rank: number;
+  iterations: number;
+  seed: number | null;
+  matched_strategy: string | null;
+  matched_ticket: number[] | null;
+  stop_reason: 'user' | 'max_iterations' | null;
+  max_iterations: number;
+  elapsed_seconds: number;
+  error: string | null;
+}
+
 export interface RecommendHistoryItem {
   rec_id: number;
   batch_id: string;
@@ -1170,6 +1192,10 @@ export const api = {
     historySummary: (params?: Omit<RecommendHistoryParams, 'limit' | 'offset'>) =>
       get<RecommendHistorySummary>('/api/v1/recommend/history/summary', params),
     autoRegister: (body: AutoRegisterIn) => post<AutoRegisterResult>('/api/v1/recommend/auto-register', body),
+    // S4.13 SEED 값 생성
+    seedSearchStart: (body: SeedSearchIn) => post<SeedSearchJob>('/api/v1/recommend/seed-search', body),
+    seedSearchStatus: (jobId: string) => get<SeedSearchJob>(`/api/v1/recommend/seed-search/${jobId}`),
+    seedSearchStop: (jobId: string) => post<SeedSearchJob>(`/api/v1/recommend/seed-search/${jobId}/stop`),
     // S4.12 현재 회차(미지정 시 최신+1)의 사용자 생성 추천 초기화
     reset: (targetDrawNo?: number) =>
       del<ResetRecommendResult>(`/api/v1/recommend/history${targetDrawNo ? `?target_draw_no=${targetDrawNo}` : ''}`),

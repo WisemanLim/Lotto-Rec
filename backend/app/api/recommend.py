@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import get_session
 from app.services import recommend_service as rsvc
+from app.services import seed_search_service as ssvc
 
 router = APIRouter(prefix="/recommend", tags=["recommend"])
 
@@ -96,6 +97,36 @@ def history(
         batch_id=batch_id,
         target_draw_no=target_draw_no,
     )
+
+
+class SeedSearchIn(BaseModel):
+    target_draw_no: int | None = Field(None, ge=1, description="미지정 시 최신 회차 + 1")
+    target_rank: int = Field(1, ge=1, le=5, description="희망 등수 (1=6개 일치 … 5=3개 일치)")
+
+
+@router.post("/seed-search")
+def seed_search_start(body: SeedSearchIn, session: Session = Depends(get_session)) -> dict:
+    """S4.13 — 대상 회차 직전 실제 회차 1등 번호를 기준으로 무작위 탐색 시작(백그라운드, 미저장)."""
+    try:
+        return ssvc.start_seed_search(session, target_draw_no=body.target_draw_no, target_rank=body.target_rank)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.get("/seed-search/{job_id}")
+def seed_search_status(job_id: str) -> dict:
+    job = ssvc.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "탐색 작업을 찾을 수 없습니다(만료되었거나 서버가 재시작됨)")
+    return job.to_dict()
+
+
+@router.post("/seed-search/{job_id}/stop")
+def seed_search_stop(job_id: str) -> dict:
+    job = ssvc.stop_job(job_id)
+    if job is None:
+        raise HTTPException(404, "탐색 작업을 찾을 수 없습니다(만료되었거나 서버가 재시작됨)")
+    return job.to_dict()
 
 
 @router.delete("/history")

@@ -52,9 +52,9 @@ export function PageTitle({ title, sub }: { title: string; sub?: ReactNode }) {
 }
 
 /** 폼 필드 — 라벨·입력·힌트 3줄 구조를 항상 유지(힌트 없으면 빈 줄 예약) → 그리드에서 입력창 상단 정렬 (PRD §E6 공통 UX). */
-export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+export function Field({ label, children, hint, className = '' }: { label: string; children: ReactNode; hint?: string; className?: string }) {
   return (
-    <label className="block text-sm">
+    <label className={`block text-sm ${className}`}>
       <span className="mb-1 block h-4 text-xs font-medium leading-4 text-neutral-600 dark:text-neutral-300">{label}</span>
       {children}
       <span className="mt-0.5 block min-h-[14px] text-[11px] leading-[14px] text-neutral-500">{hint ?? '\u00a0'}</span>

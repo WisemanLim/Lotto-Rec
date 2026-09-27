@@ -15,6 +15,16 @@ import { ErrorBox, Field, FormSlot, Loading, PageTitle, Section, btnCls, inputCl
 import { fmtCI, fmtDate, fmtNum, fmtP, fmtParams, fmtSigned } from '../lib/format';
 import type { AutoRegisterResult, RecommendHistoryItem } from '../api/client';
 
+// S4.13 SEED 값 생성 — 희망 등수 선택지·표시 라벨 (rank_of 와 동일 기준: 1등 6개 … 5등 3개)
+const RANK_OPTIONS = [
+  { v: '1', label: '1등 (6개 일치)' },
+  { v: '2', label: '2등 (5개+보너스)' },
+  { v: '3', label: '3등 (5개 일치)' },
+  { v: '4', label: '4등 (4개 일치)' },
+  { v: '5', label: '5등 (3개 일치)' },
+];
+const rankLabel = (rank: number) => RANK_OPTIONS.find((r) => r.v === String(rank))?.label ?? `${rank}등`;
+
 function BacktestSummary({ strategy }: { strategy: string }) {
   const latest = useQuery({ queryKey: ['validation', 'latest'], queryFn: api.validation.latest, retry: false });
   const id = latest.data?.status === 'done' ? latest.data.validation_id : null;
@@ -321,6 +331,24 @@ export default function Recommend() {
   const [maxShared, setMaxShared] = useState('');
   const [includeControl, setIncludeControl] = useState(true);
   const [save, setSave] = useState(true);
+  // S4.13 SEED 값 생성 — 대상 회차 직전 실제 회차 1등 번호 기준 무작위 탐색(백그라운드 폴링), 중지 가능
+  const [targetRank, setTargetRank] = useState('1');
+  const [seedJobId, setSeedJobId] = useState<string | null>(null);
+  const seedJob = useQuery({
+    queryKey: ['recommend', 'seed-search', seedJobId],
+    queryFn: () => api.recommend.seedSearchStatus(seedJobId as string),
+    enabled: seedJobId !== null,
+    refetchInterval: (q) => (q.state.data && q.state.data.status !== 'running' ? false : 400),
+  });
+  useEffect(() => {
+    if (seedJob.data?.status === 'done' && seedJob.data.seed != null) setSeed(String(seedJob.data.seed));
+  }, [seedJob.data?.status, seedJob.data?.seed]);
+  const seedSearchStart = useMutation({
+    mutationFn: () => api.recommend.seedSearchStart({ target_rank: Number(targetRank) }),
+    onSuccess: (job) => setSeedJobId(job.job_id),
+  });
+  const seedSearchStop = useMutation({ mutationFn: () => api.recommend.seedSearchStop(seedJobId as string) });
+  const seedRunning = seedJob.data?.status === 'running';
   useEffect(() => {
     if (config.data && count === '') setCount(String(config.data.lotto_number_recommendation_count));
   }, [config.data, count]);
@@ -455,27 +483,47 @@ export default function Recommend() {
             </button>
           ))}
         </div>
-        <form onSubmit={submit} className="mt-4 grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-7">
-          <Field label="추천 개수" hint={`기본 ${config.data?.lotto_number_recommendation_count ?? '—'} (.env)`}>
-            <input className={inputCls} type="number" min={1} max={50} value={count} onChange={(e) => setCount(e.target.value)} />
+        <form onSubmit={submit} className="mt-4 flex flex-wrap items-start gap-x-2 gap-y-3">
+          <Field className="shrink-0" label="추천 개수" hint={`기본 ${config.data?.lotto_number_recommendation_count ?? '—'} (.env)`}>
+            <input className={`${inputCls} !w-16`} type="number" min={1} max={50} value={count} onChange={(e) => setCount(e.target.value)} />
           </Field>
-          <Field label="seed" hint={`빈칸 = 기본 ${config.data?.lotto_random_seed ?? ''}`}>
-            <input className={inputCls} type="number" value={seed} onChange={(e) => setSeed(e.target.value)} />
+          <Field className="shrink-0" label="seed" hint={`빈칸 = 기본 ${config.data?.lotto_random_seed ?? ''}`}>
+            <input className={`${inputCls} !w-28`} type="number" value={seed} onChange={(e) => setSeed(e.target.value)} />
           </Field>
-          <Field label="티켓 간 최대 공유 번호" hint="0–6, 빈칸 = 제한 없음">
-            <input className={inputCls} type="number" min={0} max={6} value={maxShared} onChange={(e) => setMaxShared(e.target.value)} />
+          <Field className="shrink-0" label="희망 등수" hint="SEED 값 생성의 목표">
+            <select aria-label="희망 등수" className={`${inputCls} !w-40`} value={targetRank} onChange={(e) => setTargetRank(e.target.value)}>
+              {RANK_OPTIONS.map((r) => (
+                <option key={r.v} value={r.v}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
           </Field>
-          <FormSlot>
-            <label className="inline-flex items-center gap-2 text-sm">
+          <FormSlot className="shrink-0">
+            <button
+              type="button"
+              className={`${btnCls} shrink-0 whitespace-nowrap !px-2 ${seedRunning ? 'bg-red-700 hover:bg-red-800' : 'bg-indigo-700 hover:bg-indigo-800'}`}
+              disabled={seedSearchStart.isPending || seedSearchStop.isPending}
+              title="대상 회차 직전 실제 회차의 1등 번호(보너스 제외)를 기준으로, 전략·번호를 무작위 반복 생성해 희망 등수와 같아지는 시행 횟수를 seed 로 채웁니다"
+              onClick={() => (seedRunning ? seedSearchStop.mutate() : seedSearchStart.mutate())}
+            >
+              {seedRunning ? 'SEED 생성 중지' : 'SEED 값 생성'}
+            </button>
+          </FormSlot>
+          <Field className="shrink-0" label="티켓 간 최대 공유 번호" hint="0–6, 빈칸 = 제한 없음">
+            <input className={`${inputCls} !w-16`} type="number" min={0} max={6} value={maxShared} onChange={(e) => setMaxShared(e.target.value)} />
+          </Field>
+          <FormSlot className="shrink-0">
+            <label className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm">
               <input type="checkbox" checked={includeControl} onChange={(e) => setIncludeControl(e.target.checked)} /> <Term id="uniform_control">균등 기준선</Term> 동시 생성
             </label>
           </FormSlot>
-          <FormSlot>
-            <label className="inline-flex items-center gap-2 text-sm">
+          <FormSlot className="shrink-0">
+            <label className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm">
               <input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} /> 저장 (성과 추적)
             </label>
           </FormSlot>
-          <FormSlot className="sm:col-span-2">
+          <FormSlot className="shrink-0">
             <span className="inline-flex flex-nowrap items-center gap-2 whitespace-nowrap" data-testid="recommend-buttons">
               <button type="submit" className={btnCls} disabled={m.isPending || seq.isPending}>
                 {m.isPending ? '생성 중…' : '추천 생성'}
@@ -492,6 +540,31 @@ export default function Recommend() {
             </span>
           </FormSlot>
         </form>
+        {seedSearchStart.isError && <ErrorBox error={seedSearchStart.error} />}
+        {seedJob.data && (
+          <p className="mt-2 text-xs" role="status" aria-label="SEED 탐색 상태">
+            {seedJob.data.status === 'running' && (
+              <span className="text-indigo-700 dark:text-indigo-300">
+                SEED 탐색 중 — {seedJob.data.iterations.toLocaleString()}회 시도 (목표 {rankLabel(seedJob.data.target_rank)}, 대상 {seedJob.data.target_draw_no}회 vs 직전 {seedJob.data.compare_draw_no}회 실제 결과) ·{' '}
+                {seedJob.data.elapsed_seconds.toFixed(1)}s 경과
+              </span>
+            )}
+            {seedJob.data.status === 'done' && (
+              <span className="text-emerald-700 dark:text-emerald-300">
+                SEED 값 생성 완료 — {seedJob.data.iterations.toLocaleString()}회 만에 {rankLabel(seedJob.data.target_rank)} 달성({labelOf(seedJob.data.matched_strategy ?? '')}) → seed 에{' '}
+                {seedJob.data.seed} 를 입력했습니다
+              </span>
+            )}
+            {seedJob.data.status === 'stopped' && (
+              <span className="text-neutral-600 dark:text-neutral-300">
+                SEED 탐색을{' '}
+                {seedJob.data.stop_reason === 'max_iterations' ? `상한(${seedJob.data.max_iterations.toLocaleString()}회)에 닿아 자동 중지` : '중지'}
+                했습니다 — {seedJob.data.iterations.toLocaleString()}회 시도 후 일치 없음
+              </span>
+            )}
+            {seedJob.data.status === 'error' && <span className="text-red-700 dark:text-red-300">SEED 탐색 오류: {seedJob.data.error}</span>}
+          </p>
+        )}
         {m.isError && <ErrorBox error={m.error} />}
         {seq.isError && <ErrorBox error={seq.error} />}
       </Section>

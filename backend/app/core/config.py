@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     lotto_auto_rerun_preset: Literal["quick", "report", "deep", "off"] = "quick"
     lotto_run_retention: int = Field(default=20, ge=0)
     lotto_lottery_pick_count: int = Field(default=5, ge=1, le=50)  # 내 번호 '등록된 번호로 추첨 시도' 선택 개수 (S5.5)
+    lotto_seed_search_max_iter: int = Field(default=20_000_000, ge=1000)  # SEED 값 생성 무작위 탐색 상한 (S4.13)
     lotto_recent_draws: int = Field(default=5, ge=1, le=20)  # 내 번호 최근 당첨번호 회차 수 (S5.8)
     lotto_timezone: str = "Asia/Seoul"  # 표시 시간대(IANA). 저장은 UTC
 

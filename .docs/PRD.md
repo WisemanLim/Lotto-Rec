@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 | :-- | :-- |
-| 문서 버전 | 1.21 (S5.5 추첨 개수 `.env`·입력 박스 · S5.10 안내 문구 배열 · S5.10 추첨 시도 ★ 상단 정렬·최근 6회차 출현 테두리 · S4.10·S4.12·S5.9 진행 예정 회차만 동작하는 방어 · S8.6-1 성과 추적 입력 영역 숨김 · S1.7 결과 입력 옆 과거 6회차 요약 · S1.6 등위별 총 당첨금·자동계산·영역 구분 · S1.6 설정/실행 결과 입력 재구성·1~5등 당첨정보 · S8.7 추천 정합성 분석 · S4.12·S5.9 현재 회차 초기화 · S5.8 저장된 번호 헤더 정렬·최근 당첨번호 · S7.1 docker compose 구동 · S4.11 추천 생성(순차) · S5.7 저장된 번호 회차 전환·필터 · 회차간 교차 공출현 S2.13 · `LOTTO_CROSS_DRAW_LAG` · 군 A/B/전체 재분석 1,241회 포함) |
+| 문서 버전 | 1.23 (S4.13 SEED 값 생성·폼 레이아웃 압축(한 줄 체크박스·간격 최소화) · S5.5 추첨 개수 `.env`·입력 박스 · S5.10 안내 문구 배열 · S5.10 추첨 시도 ★ 상단 정렬·최근 6회차 출현 테두리 · S4.10·S4.12·S5.9 진행 예정 회차만 동작하는 방어 · S8.6-1 성과 추적 입력 영역 숨김 · S1.7 결과 입력 옆 과거 6회차 요약 · S1.6 등위별 총 당첨금·자동계산·영역 구분 · S1.6 설정/실행 결과 입력 재구성·1~5등 당첨정보 · S8.7 추천 정합성 분석 · S4.12·S5.9 현재 회차 초기화 · S5.8 저장된 번호 헤더 정렬·최근 당첨번호 · S7.1 docker compose 구동 · S4.11 추천 생성(순차) · S5.7 저장된 번호 회차 전환·필터 · 회차간 교차 공출현 S2.13 · `LOTTO_CROSS_DRAW_LAG` · 군 A/B/전체 재분석 1,241회 포함) |
 | 작성일 | 2026-09-08 |
 | 상태 | Draft → 구현 중 보완 (living document) |
 | 근거 문서 | `.docs/Perplexity-로또번호 무작위 추출 통계분석.md`, `.docs/lotto(~1240).xlsx` |
@@ -390,6 +390,15 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 - S4.11 (v1.12, 사용자 요청) **추천 생성(순차)**: 추천 생성 폼의 '추천 생성' 버튼 우측 '추천 생성(순차)' 버튼. 클릭 시 전략 선택에서 제공하는 **모든 전략을 카탈로그 순서대로** 같은 옵션(추천 개수·seed·최대 공유·저장)으로 한 번에 생성한다. 전략마다 별도 batch(성과 추적·S4.10 '전략별 최신 batch' 규칙과 호환), 균등 기준선은 목록의 `uniform` 전략 자체가 담당하므로 전략별 control 은 붙이지 않는다. 한 전략이 실패해도 나머지는 계속 진행하고 `failed` 로 보고. 결과는 전략별 추천 결과 섹션을 순서대로 표시하며 상단에 요약(전략 수·티켓 수·대상 회차·실패). API `POST /recommend/sequential` {strategies?, count?, seed?, max_shared?, save} → {sequence_id, target_draw_no, strategies, results[RecommendOut], failed[{strategy,error}], total_tickets}.
 - S4.12 (v1.15, 사용자 요청) **추천 초기화**: 추천 이력 필터 바의 '내 번호로 자동 등록' 우측 '추천 초기화' 버튼(필터 초기화·자동 등록·추천 초기화 3개는 **한 줄** 배치). **현재 회차**(= 최신 결과 회차 + 1, 예: 최신 1,242회면 1,243회)를 대상으로 저장된 **사용자 생성(origin=user) 추천 티켓 전체를 삭제**한다. 확인 대화상자(대상 회차 표기) 후 실행하며, 검증 replay(origin=backtest)·다른 회차 추천·내 번호(S5.9 별도)는 건드리지 않는다. 삭제 후 이력·요약·성과 추적이 즉시 갱신된다. API `DELETE /recommend/history?target_draw_no=` (미지정 시 최신 회차+1; origin=user 만 대상) → {target_draw_no, deleted_recommendations, deleted_outcomes}. 대상 회차 결과가 이미 적재돼 성과 결과(`ticket_outcome`, source=recommendation)가 있으면 함께 삭제해 고아 행을 남기지 않는다. (v1.19, 방어 코드) **결과가 입력된 회차의 추천은 초기화할 수 없다** — 대상 회차 ≤ 최신 결과 회차이면 그 추천은 이미 이전 회차의 성과 추적 대상이므로 API 는 `400`("결과가 입력된 회차는 초기화할 수 없음")으로 거부하고, UI '추천 초기화' 버튼은 **진행 예정 회차(최신+1)에 저장된 추천이 없으면 비활성화**(툴팁에 사유)한다. 성과 결과(`ticket_outcome`) 삭제 경로는 이 제한으로 실행되지 않는다.
 
+- S4.13 (v1.22, 사용자 요청) **SEED 값 생성(무작위 탐색)** — 추천 생성 폼의 seed 입력칸 우측에 **'SEED 값 생성'** 버튼을 둔다.
+  - **동작**: 클릭 시 (a) 대상 회차 $D$(생성 폼과 동일 — 미지정 시 최신 회차+1)의 **직전 실제 회차** $D-1$(이미 결과가 있는 회차)의 1등 당첨 본번호 6개(보너스 제외)를 비교 기준으로 고정하고, (b) 매 시행마다 **전략 카탈로그 중 하나를 무작위로 골라** 해당 전략의 기본 가중치로 번호 6개를 무작위 생성해 (c) 기준 조합과 대조, **희망 등수**(아래)와 같은 등수가 나올 때까지 시행을 반복한다. 일치하는 순간의 **시행 횟수(1부터)를 seed 입력칸에 채운다**.
+  - **희망 등수**: SEED 버튼 좌측에 등수 선택(기본 **1등 · 6개 번호 일치**, 그 외 2등 5개+보너스 · 3등 5개 일치 · 4등 4개 일치 · 5등 3개 일치)을 입력해 무한반복을 짧게 조정할 수 있다. 등수는 §4.1 확률모형의 등수 규칙(`rank_of`)과 동일 기준으로 판정한다.
+  - **중지**: 클릭 즉시 버튼 라벨이 **'SEED 생성 중지'** 로 바뀌고 탐색은 서버 **백그라운드**(스레드, 미저장 — 서버 재시작 시 소멸)에서 계속 진행하며 화면은 진행 상황(시행 횟수)을 주기적으로 폴링해 표시한다. 다시 누르면 즉시 중단(중지까지의 시행 횟수만 표시, seed 는 채우지 않음). 안전장치로 시행 횟수가 `LOTTO_SEED_SEARCH_MAX_ITER`(기본 20,000,000)에 닿으면 자동 중지한다(1등 목표의 이론적 기대 시행 수 ≈ 8,145,060회이므로 그 배수로 설정).
+  - **성능 단순화(가정)**: 무작위 시행은 `pair_association`(기본 파라미터의 순차 Lift 가중)을 제외한 모든 전략에서 **해당 전략의 기본 가중치 벡터로 1회 비복원추출**만 수행하고, 실제 추천 생성(§E4)에 있는 커버리지 제약·전형성 재표본·당첨자수 모형 후보 랭킹(`hybrid`/`low_competition`)은 적용하지 않는다(수백만 회 반복 성능 확보 목적). `hybrid`→`bayesian_shrink`, `low_competition`→`uniform` 가중치로 대체하는데, 이는 `winners_model` 미보유 시 실제 추천 로직의 기존 폴백과 동일하다. 탐색 자체는 이 페이지의 부가 기능(재미·seed 재현용)이며 결과 seed 로 실제 `POST /recommend`(전체 로직 적용)를 호출하는 것은 사용자의 선택이다.
+  - **API**: `POST /recommend/seed-search` {target_draw_no?, target_rank(1–5, 기본 1)} → {job_id, status:"running", target_draw_no, compare_draw_no, target_rank, iterations:0, seed:null, max_iterations} — 대상 회차의 직전 회차 결과가 없으면 `400`. `GET /recommend/seed-search/{job_id}` → 위와 같은 형태로 진행 상황(`iterations`, `elapsed_seconds`) 또는 완료 시 `status:"done"`·`seed`·`matched_strategy`·`matched_ticket`, 중지/한도 도달 시 `status:"stopped"`(`stop_reason: "user"|"max_iterations"` 로 구분). `POST /recommend/seed-search/{job_id}/stop` → 중지 요청.
+  - **배치**: 추천 생성 폼 필드 순서를 **추천 개수(폭 축소) → seed → 희망 등수 → 'SEED 값 생성/SEED 생성 중지' → 티켓 간 최대 공유 번호 → 균등 기준선 동시 생성 → 저장(성과 추적) → 추천 생성/추천 생성(순차)** 로 배치한다.
+  - **레이아웃 압축**(v1.23, 사용자 요청) — 위 필드들을 **가로로 촘촘히**(flex-wrap, 항목 간 간격 최소화) 배치한다: 각 입력란은 값 크기에 맞춘 좁은 폭(추천 개수·티켓 간 최대 공유 번호는 특히 좁게)을 쓰고, 체크박스 라벨('균등 기준선 동시 생성', '저장 (성과 추적)')은 **줄바꿈되지 않는 한 줄**로 표시하며, 마지막 '추천 생성'/'추천 생성(순차)' 버튼 묶음 우측에 불필요한 여백을 남기지 않는다.
+
 ### E5. 사용자 예측(통계기반 평가) (P0)
 
 - S5.1 사용자가 6개(+선택 보너스) 입력 → 유효성 검사.
@@ -600,6 +609,7 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | `LOTTO_CROSS_DRAW_LAG` | 회차간 전/후 간격 | 5 | 회차간 교차 공출현(S2.13)의 최대 lag $L$ (1–50). lag 1..$L$ 개별 + 창 합산, 경계 회차는 간격 내 가능한 쌍만 포함. 변경 후 backend 재시작·재분석 필요(run 생성 시 고정, 섹션 `max_lag`). `/config` 로 노출(v1.11.1) |
 | `LOTTO_RECENT_DRAWS` | 최근 당첨번호 회차 수 | 5 | 내 번호 '저장된 번호' 타이틀 우측에 표시할 최근 당첨번호 회차 수(S5.8, 1–20). `/config` `lotto_recent_draws` 로 노출. local(honcho)에서는 uvicorn 이 루트 `.env`/`.env.local` 을 감시해 **저장 즉시 자동 재기동·반영**(v1.14.3), docker 는 `make docker-restart` |
 | `LOTTO_LOTTERY_PICK_COUNT` | 추첨 시도 선택 개수 | 5 | 내 번호 '등록된 번호로 추첨 시도'(S5.5)에서 ★ 로 선택할 번호(티켓) 개수 기본값(1–50). `/config` `lotto_lottery_pick_count` 로 노출, 화면의 입력 박스로 세션 단위 수정 가능. local 은 저장 즉시 반영(uvicorn 이 `.env.local` 감시) |
+| `LOTTO_SEED_SEARCH_MAX_ITER` | SEED 탐색 최대 시행 횟수 | 20000000 | S4.13 '`SEED 값 생성`' 무작위 탐색의 안전 상한(도달 시 자동 중지, `status=stopped`). `/config` `lotto_seed_search_max_iter` 로 노출 |
 | `LOTTO_BACKEND_PORT` / `LOTTO_FRONTEND_PORT` | 포트 | 8000 / 5173 | 로컬 바인딩 127.0.0.1 |
 
 `.env.local.example`을 저장소에 포함하고 `.env.local`은 gitignore. (v1.9.2) 로드 우선순위(낮→높): `.env.local.example` → `.env` → `.env.local` → OS 환경변수 — pydantic-settings 는 `env_file` 튜플의 뒤 파일이 앞 파일을 덮어쓰므로 example 을 맨 앞에 둔다.
@@ -627,6 +637,9 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | GET | `/api/v1/validation/runs/{id}` | 재현성·동질성·backtest·scoring 결과 |
 | POST | `/api/v1/recommend` | {strategy, count?, seed?, coverage?, constraints?} → tickets + scorecards + `past_wins`(과거 1·2등 회차, S4.9) + backtest 요약 |
 | POST | `/api/v1/recommend/auto-register` | {target_draw_no?, seed?} → 무작위 빈도 상위 5 위치 → 전략별 최신 batch 티켓을 내 번호로 등록 (S4.10) |
+| POST | `/api/v1/recommend/seed-search` | (S4.13) SEED 무작위 탐색 시작 — {target_draw_no?, target_rank?} → {job_id, status, target_draw_no, compare_draw_no, target_rank, iterations, seed, max_iterations} (백그라운드, 미저장) |
+| GET | `/api/v1/recommend/seed-search/{job_id}` | (S4.13) 탐색 진행 상황/결과 폴링 |
+| POST | `/api/v1/recommend/seed-search/{job_id}/stop` | (S4.13) 탐색 중지 요청 |
 | POST | `/api/v1/recommend/sequential` | (S4.11) 모든 전략(또는 `strategies[]`) 순차 생성 — {strategies?, count?, seed?, max_shared?, save} → {sequence_id, target_draw_no, strategies, results[], failed[], total_tickets} |
 | GET | `/api/v1/recommend/history` · `/summary` | 추천 이력(필터: origin, strategy, batch_id, target_draw_no; limit ≤50000, offset) — 행마다 `past_wins` 포함 |
 | DELETE | `/api/v1/recommend/history` | (S4.12) 현재 회차(`target_draw_no` 미지정 시 최신+1) 사용자 생성 추천 초기화 → {target_draw_no, deleted_recommendations, deleted_outcomes} |
@@ -775,6 +788,8 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 
 | 버전 | 일자 | 내용 |
 | :-- | :-- | :-- |
+| 1.23 | 2026-09-27 | 사용자 요청: 추천 생성 폼 레이아웃 압축 — 추천 개수·seed 등 입력란 간 간격 최소화, '균등 기준선 동시 생성'·'저장 (성과 추적)' 체크박스 라벨 한 줄 표시, 추천 생성/추천 생성(순차) 버튼 우측 여백 제거(S4.13) |
+| 1.22 | 2026-09-27 | 사용자 요청: 추천 생성 폼에 **'SEED 값 생성'** — 대상 회차 직전 실제 회차의 1등 번호(보너스 제외)를 기준으로, 무작위 전략·무작위 조합을 희망 등수와 같아질 때까지 반복해 그 시행 횟수를 seed 로 채움. 희망 등수 입력(기본 1등)·중지 버튼·상한(`LOTTO_SEED_SEARCH_MAX_ITER`)·폼 필드 재배치 포함 (S4.13, `POST/GET /recommend/seed-search`) |
 | 1.21 | 2026-09-21 | 사용자 요청: 추첨 시도 선택 개수를 `.env`(`LOTTO_LOTTERY_PICK_COUNT`, 기본 5)로 관리하고 '등록된 번호로 추첨 시도' 앞에 수정 입력 박스 추가(S5.5); 추첨 시도 결과 문구를 테두리 범례 우측 같은 줄로 배치(S5.10) |
 | 1.20 | 2026-09-21 | 사용자 요청: 내 번호 '등록된 번호로 추첨 시도' 후 ★ 티켓을 목록 상단 정렬, ★ 티켓 번호 중 최근 6회차 1등 본번호와 겹치는 번호에 출현 횟수별 테두리(흰 안쪽 테두리 + 1회 검정/2회 노랑/3회 파랑/4회 빨강/5회 회색/6회 초록) 표시 (S5.10, 프론트 표시 전용) |
 | 1.19 | 2026-09-21 | 사용자 요청(방어 코드): 결과가 입력된 회차의 추천·내 번호는 초기화 불가(API 400, 버튼 비활성) — 진행 예정 회차만 초기화(S4.12·S5.9); 성과 추적의 중복 '추첨 결과 입력 / 업로드' 섹션 주석 처리로 숨김(S8.6-1) |
