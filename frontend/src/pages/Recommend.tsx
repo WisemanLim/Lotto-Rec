@@ -340,8 +340,11 @@ export default function Recommend() {
     enabled: seedJobId !== null,
     refetchInterval: (q) => (q.state.data && q.state.data.status !== 'running' ? false : 400),
   });
-  // S4.13 v1.24 — '추천 생성'/'추천 생성(순차)' 클릭 시 SEED 탐색이 이미 완료면 즉시, 아니면 탐색을 (재)시작해
-  // 완료되는 즉시 자동으로 해당 추천을 생성. 중지/오류로 끝나면 예약된 생성도 취소한다.
+  // S4.13 v1.26 — 'seed 신규' 체크박스(기본 해제): 체크했을 때만 '추천 생성'/'추천 생성(순차)' 클릭이
+  // SEED 탐색을 (재)시작해 완료를 기다린다. 해제 상태(기본)면 탐색을 강제하지 않고 현재 seed 값으로 즉시 생성한다
+  // (v1.24 의 "매번 무조건 새 SEED 탐색" 문제 방지). 대기 중 'SEED 생성 중지'를 누르면 예약을 취소하지 않고
+  // 현재 seed 입력값(탐색 시작 전 값)으로 생성한다 — 오류로 끝난 경우만 안전하게 취소.
+  const [seedNew, setSeedNew] = useState(false);
   const [pendingAction, setPendingAction] = useState<'single' | 'sequential' | null>(null);
   useEffect(() => {
     if (!seedJob.data) return;
@@ -360,8 +363,23 @@ export default function Recommend() {
         seq.mutate({ count: count ? Number(count) : null, seed: seedJob.data.seed, max_shared: maxShared ? Number(maxShared) : null, save });
       }
       setPendingAction(null);
-    } else if (seedJob.data.status === 'stopped' || seedJob.data.status === 'error') {
+    } else if (seedJob.data.status === 'stopped') {
+      // 중지(사용자 또는 상한 도달) 시 예약된 생성을 취소하지 않고 기존 seed 입력값으로 진행한다 (v1.26)
+      if (pendingAction === 'single') {
+        m.mutate({
+          strategy,
+          count: count ? Number(count) : null,
+          seed: seed ? Number(seed) : null,
+          max_shared: maxShared ? Number(maxShared) : null,
+          include_control: includeControl,
+          save,
+        });
+      } else if (pendingAction === 'sequential') {
+        seq.mutate({ count: count ? Number(count) : null, seed: seed ? Number(seed) : null, max_shared: maxShared ? Number(maxShared) : null, save });
+      }
       setPendingAction(null);
+    } else if (seedJob.data.status === 'error') {
+      setPendingAction(null); // 탐색 자체가 실패한 경우는 안전하게 예약 취소(생성하지 않음)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedJob.data?.status, seedJob.data?.seed]);
@@ -389,11 +407,11 @@ export default function Recommend() {
     mutationFn: (b: SequentialIn) => api.recommend.sequential(b),
     onSuccess: invalidateAfterRecommend,
   });
-  // SEED 탐색이 아직 완료 전이면(시도한 적 없거나 진행 중이거나 중지/오류로 끝났으면) 탐색을 (재)시작하고
-  // 완료되는 즉시 자동으로 이어서 생성하도록 예약한다. 이미 완료돼 있으면 이 함수는 아무 일도 하지 않는다
-  // (호출자가 바로 생성을 진행).
+  // SEED 탐색이 이미 완료돼 있으면 그 값으로 바로 생성(체크박스 무관). 그렇지 않을 때 'seed 신규'가
+  // 체크돼 있어야만 탐색을 (재)시작하고 완료되는 즉시 자동으로 이어서 생성하도록 예약한다. 해제(기본)면
+  // 탐색을 강제하지 않고 이 함수가 false 를 반환해 호출자가 현재 seed 값으로 바로 생성한다 (v1.26).
   const startSeedSearchIfNeeded = (action: 'single' | 'sequential') => {
-    if (seedDone) return false;
+    if (seedDone || !seedNew) return false;
     setPendingAction(action);
     if (!seedRunning) seedSearchStart.mutate();
     return true;
@@ -543,6 +561,9 @@ export default function Recommend() {
             >
               {seedRunning ? 'SEED 생성 중지' : 'SEED 값 생성'}
             </button>
+            <label className="ml-2 inline-flex items-center gap-1.5 whitespace-nowrap text-sm" title="체크 시 '추천 생성'·'추천 생성(순차)' 클릭이 SEED 탐색을 자동으로 시작·대기했다가 그 seed 로 생성합니다. 해제(기본)하면 탐색을 강제하지 않고 현재 seed 값으로 바로 생성합니다.">
+              <input type="checkbox" checked={seedNew} onChange={(e) => setSeedNew(e.target.checked)} /> seed 신규
+            </label>
           </FormSlot>
           <Field className="shrink-0" label="티켓 간 최대 공유 번호" hint="0–6, 빈칸 = 제한 없음">
             <input className={`${inputCls} !w-16`} type="number" min={0} max={6} value={maxShared} onChange={(e) => setMaxShared(e.target.value)} />

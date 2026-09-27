@@ -85,7 +85,7 @@ test('탐색 시작 후 버튼이 "SEED 생성 중지"로 바뀌고, 진행 상�
   expect(status.textContent).toMatch(/1243회 vs 직전 1242회/);
 
   jobState = { ...jobState, status: 'done', iterations: 12345, seed: 12345, matched_strategy: 'uniform', matched_ticket: [1, 2, 3, 4, 5, 6] };
-  await waitFor(() => expect(screen.getByLabelText(/^seed/)).toHaveValue(12345));
+  await waitFor(() => expect(screen.getByRole('spinbutton', { name: /^seed/ })).toHaveValue(12345));
   await waitFor(() => expect(screen.getByRole('status', { name: 'SEED 탐색 상태' }).textContent).toMatch(/완료 — 12,345회 만에/));
   expect(screen.getByRole('button', { name: 'SEED 값 생성' })).toBeInTheDocument();
 });

@@ -4,7 +4,9 @@ import { MemoryRouter } from 'react-router-dom';
 import Recommend from './Recommend';
 import { RunProvider } from '../hooks/RunProvider';
 
-// S4.13 v1.24: '추천 생성'/'추천 생성(순차)' 클릭 시 SEED 탐색 완료 여부에 따른 자동 연계.
+// S4.13 v1.26: '추천 생성'/'추천 생성(순차)' 은 기본적으로 SEED 탐색을 강제하지 않는다('seed 신규' 체크박스,
+// 기본 해제). 체크했을 때만 탐색을 (재)시작해 완료를 기다리고, 그 상태에서 'SEED 생성 중지'를 누르면 생성을
+// 취소하지 않고 기존 seed 값으로 진행한다.
 const posts: Array<{ url: string; body: unknown }> = [];
 let seedJob: Record<string, unknown> | null = null;
 const recommendResponse = {
@@ -56,9 +58,22 @@ function mount() {
   );
 }
 
-test('SEED 탐색을 시도한 적 없을 때 "추천 생성"을 누르면 탐색을 먼저 시작하고, 완료되면 그 seed 로 자동 생성한다', async () => {
+test('"seed 신규" 체크박스는 기본 해제이며, 해제 상태에서 "추천 생성"은 SEED 탐색 없이 현재 seed 값으로 즉시 생성한다', async () => {
   mount();
   const genBtn = await screen.findByRole('button', { name: '추천 생성' });
+  expect(screen.getByRole('checkbox', { name: 'seed 신규' })).not.toBeChecked();
+  fireEvent.click(genBtn);
+
+  await waitFor(() => expect(posts.some((p) => /\/recommend$/.test(p.url))).toBe(true));
+  expect(posts.some((p) => p.url.includes('/recommend/seed-search'))).toBe(false); // 탐색 강제 없음
+  expect(posts.find((p) => /\/recommend$/.test(p.url))!.body).toMatchObject({ seed: null }); // 빈칸 = .env 기본값
+  expect(screen.queryByRole('button', { name: 'SEED 대기 중…' })).not.toBeInTheDocument();
+});
+
+test('"seed 신규"를 체크하면 "추천 생성"이 탐색을 먼저 시작하고, 완료되면 그 seed 로 자동 생성한다', async () => {
+  mount();
+  const genBtn = await screen.findByRole('button', { name: '추천 생성' });
+  fireEvent.click(screen.getByRole('checkbox', { name: 'seed 신규' }));
   fireEvent.click(genBtn);
 
   await waitFor(() => expect(posts.some((p) => p.url.includes('/recommend/seed-search'))).toBe(true));
@@ -71,28 +86,31 @@ test('SEED 탐색을 시도한 적 없을 때 "추천 생성"을 누르면 탐�
   await waitFor(() => expect(posts.some((p) => /\/recommend$/.test(p.url))).toBe(true));
   const call = posts.find((p) => /\/recommend$/.test(p.url));
   expect(call!.body).toMatchObject({ seed: 31321734 });
-  await waitFor(() => expect(screen.getByLabelText(/^seed/)).toHaveValue(31321734));
+  await waitFor(() => expect(screen.getByRole('spinbutton', { name: /^seed/ })).toHaveValue(31321734));
   expect(screen.getByRole('button', { name: '추천 생성' })).not.toBeDisabled();
 });
 
-test('SEED 탐색이 이미 완료돼 있으면 "추천 생성"은 새 탐색 없이 즉시 실행된다', async () => {
+test('SEED 탐색이 이미 완료돼 있으면 체크박스와 무관하게 "추천 생성"은 새 탐색 없이 즉시 실행된다', async () => {
   mount();
   const seedBtn = await screen.findByRole('button', { name: 'SEED 값 생성' });
   fireEvent.click(seedBtn);
   await screen.findByRole('button', { name: 'SEED 생성 중지' }); // 첫 폴링(running)이 반영될 때까지 대기
   seedJob = { ...(seedJob as Record<string, unknown>), status: 'done', iterations: 42, seed: 42, matched_strategy: 'uniform', matched_ticket: [1, 2, 3, 4, 5, 6], env_updated: true };
-  await waitFor(() => expect(screen.getByLabelText(/^seed/)).toHaveValue(42));
+  await waitFor(() => expect(screen.getByRole('spinbutton', { name: /^seed/ })).toHaveValue(42));
   posts.length = 0; // 이전 seed-search 호출 기록 지움
 
+  expect(screen.getByRole('checkbox', { name: 'seed 신규' })).not.toBeChecked(); // 체크 안 해도
   fireEvent.click(screen.getByRole('button', { name: '추천 생성' }));
   await waitFor(() => expect(posts.some((p) => /\/recommend$/.test(p.url))).toBe(true));
   expect(posts.some((p) => p.url.includes('/recommend/seed-search'))).toBe(false); // 재탐색 없음
   expect(posts.find((p) => /\/recommend$/.test(p.url))!.body).toMatchObject({ seed: 42 });
 });
 
-test('대기 중 "SEED 생성 중지"를 누르면 예약된 추천 생성이 취소된다', async () => {
+test('"seed 신규" 대기 중 "SEED 생성 중지"를 누르면 생성을 취소하지 않고 기존(탐색 시작 전) seed 값으로 생성한다', async () => {
   mount();
-  const seqBtn = await screen.findByRole('button', { name: '추천 생성(순차)' });
+  fireEvent.change(screen.getByRole('spinbutton', { name: /^seed/ }), { target: { value: '777' } }); // 기존 값
+  fireEvent.click(screen.getByRole('checkbox', { name: 'seed 신규' }));
+  const seqBtn = screen.getByRole('button', { name: '추천 생성(순차)' });
   await waitFor(() => expect(seqBtn).not.toBeDisabled()); // 전략 목록 로드 전엔 비활성
   fireEvent.click(seqBtn);
   await waitFor(() => expect(posts.some((p) => p.url.includes('/recommend/seed-search'))).toBe(true));
@@ -100,7 +118,22 @@ test('대기 중 "SEED 생성 중지"를 누르면 예약된 추천 생성이 �
   await screen.findByRole('button', { name: 'SEED 생성 중지' }); // 첫 폴링(running)이 반영될 때까지 대기
 
   fireEvent.click(screen.getByRole('button', { name: 'SEED 생성 중지' }));
+  await waitFor(() => expect(posts.some((p) => p.url.includes('/recommend/sequential'))).toBe(true));
+  expect(posts.find((p) => p.url.includes('/recommend/sequential'))!.body).toMatchObject({ seed: 777 }); // 기존 값 그대로
   await waitFor(() => expect(screen.getByRole('status', { name: 'SEED 탐색 상태' }).textContent).toMatch(/중지했습니다/));
+  expect(screen.getByRole('button', { name: '추천 생성(순차)' })).not.toBeDisabled();
+});
+
+test('탐색이 오류로 끝나면 예약된 생성은 취소된다(안전 우선)', async () => {
+  mount();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'seed 신규' }));
+  const seqBtn = screen.getByRole('button', { name: '추천 생성(순차)' });
+  await waitFor(() => expect(seqBtn).not.toBeDisabled());
+  fireEvent.click(seqBtn);
+  await screen.findByRole('button', { name: 'SEED 대기 중…' });
+
+  seedJob = { ...(seedJob as Record<string, unknown>), status: 'error', error: '내부 오류' };
+  await waitFor(() => expect(screen.getByRole('status', { name: 'SEED 탐색 상태' }).textContent).toMatch(/오류/));
   expect(posts.some((p) => p.url.includes('/recommend/sequential'))).toBe(false);
   expect(screen.getByRole('button', { name: '추천 생성(순차)' })).not.toBeDisabled();
 });
