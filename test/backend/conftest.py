@@ -18,6 +18,18 @@ os.environ["LOTTO_AUTO_RERUN_PRESET"] = "off"
 os.environ["LOTTO_MC_ITERATIONS"] = "300"
 
 
+@pytest.fixture(autouse=True)
+def _no_real_env_local_writes(monkeypatch, tmp_path):  # noqa: ANN001, ANN201
+    """S4.13 v1.24 안전장치 — SEED 값 생성이 일치하면 `.env.local` 을 갱신한다(`env_file.update_env_local`).
+    어떤 테스트도 실제 프로젝트의 `.env.local` 을 건드리면 안 되므로, 세션의 모든 테스트에 대해
+    `env_file.ENV_LOCAL_PATH` 를 매 테스트 전용 임시 파일로 강제 치환한다(개별 테스트가 놓쳐도 안전)."""
+    from app.core import env_file
+
+    fake = tmp_path / ".env.local"
+    fake.write_text("LOTTO_RANDOM_SEED=0\n", encoding="utf-8")
+    monkeypatch.setattr(env_file, "ENV_LOCAL_PATH", fake)
+
+
 @pytest.fixture(scope="session")
 def engine():  # noqa: ANN201
     from app.db import models  # noqa: F401  (메타데이터 등록)

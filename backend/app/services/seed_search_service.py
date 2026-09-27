@@ -22,6 +22,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.env_file import update_env_local
 from app.core.recommend import strategies as strat
 from app.core.recommend.strategies import (
     STRATEGIES,
@@ -50,6 +51,7 @@ class SeedSearchJob:
     matched_strategy: str | None = None
     matched_ticket: list[int] | None = None
     stop_reason: str | None = None  # "user" | "max_iterations" (status=stopped 일 때만)
+    env_updated: bool = False  # status=done 일 때 .env.local LOTTO_RANDOM_SEED 갱신 성공 여부 (v1.24)
     error: str | None = None
     started_at: float = field(default_factory=time.monotonic)
     finished_at: float | None = None
@@ -71,6 +73,7 @@ class SeedSearchJob:
             "matched_strategy": self.matched_strategy,
             "matched_ticket": self.matched_ticket,
             "stop_reason": self.stop_reason,
+            "env_updated": self.env_updated,
             "max_iterations": self.max_iterations,
             "elapsed_seconds": self.elapsed_seconds(),
             "error": self.error,
@@ -139,11 +142,16 @@ def _run(job: SeedSearchJob, ctx: strat.Context, compare_main: set[int], compare
             m = len(compare_main.intersection(ticket.tolist()))
             b = compare_bonus in ticket
             if rank_of(m, b) == job.target_rank:
+                try:
+                    env_updated = update_env_local("LOTTO_RANDOM_SEED", str(iterations))
+                except OSError:
+                    env_updated = False
                 with _lock:
                     job.iterations = iterations
                     job.seed = iterations
                     job.matched_strategy = name
                     job.matched_ticket = sorted(int(x) for x in ticket)
+                    job.env_updated = env_updated
                     job.status = "done"
                     job.finished_at = time.monotonic()
                 return

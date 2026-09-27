@@ -340,8 +340,30 @@ export default function Recommend() {
     enabled: seedJobId !== null,
     refetchInterval: (q) => (q.state.data && q.state.data.status !== 'running' ? false : 400),
   });
+  // S4.13 v1.24 — '추천 생성'/'추천 생성(순차)' 클릭 시 SEED 탐색이 이미 완료면 즉시, 아니면 탐색을 (재)시작해
+  // 완료되는 즉시 자동으로 해당 추천을 생성. 중지/오류로 끝나면 예약된 생성도 취소한다.
+  const [pendingAction, setPendingAction] = useState<'single' | 'sequential' | null>(null);
   useEffect(() => {
-    if (seedJob.data?.status === 'done' && seedJob.data.seed != null) setSeed(String(seedJob.data.seed));
+    if (!seedJob.data) return;
+    if (seedJob.data.status === 'done' && seedJob.data.seed != null) {
+      setSeed(String(seedJob.data.seed));
+      if (pendingAction === 'single') {
+        m.mutate({
+          strategy,
+          count: count ? Number(count) : null,
+          seed: seedJob.data.seed,
+          max_shared: maxShared ? Number(maxShared) : null,
+          include_control: includeControl,
+          save,
+        });
+      } else if (pendingAction === 'sequential') {
+        seq.mutate({ count: count ? Number(count) : null, seed: seedJob.data.seed, max_shared: maxShared ? Number(maxShared) : null, save });
+      }
+      setPendingAction(null);
+    } else if (seedJob.data.status === 'stopped' || seedJob.data.status === 'error') {
+      setPendingAction(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedJob.data?.status, seedJob.data?.seed]);
   const seedSearchStart = useMutation({
     mutationFn: () => api.recommend.seedSearchStart({ target_rank: Number(targetRank) }),
@@ -349,6 +371,7 @@ export default function Recommend() {
   });
   const seedSearchStop = useMutation({ mutationFn: () => api.recommend.seedSearchStop(seedJobId as string) });
   const seedRunning = seedJob.data?.status === 'running';
+  const seedDone = seedJob.data?.status === 'done';
   useEffect(() => {
     if (config.data && count === '') setCount(String(config.data.lotto_number_recommendation_count));
   }, [config.data, count]);
@@ -366,8 +389,18 @@ export default function Recommend() {
     mutationFn: (b: SequentialIn) => api.recommend.sequential(b),
     onSuccess: invalidateAfterRecommend,
   });
+  // SEED 탐색이 아직 완료 전이면(시도한 적 없거나 진행 중이거나 중지/오류로 끝났으면) 탐색을 (재)시작하고
+  // 완료되는 즉시 자동으로 이어서 생성하도록 예약한다. 이미 완료돼 있으면 이 함수는 아무 일도 하지 않는다
+  // (호출자가 바로 생성을 진행).
+  const startSeedSearchIfNeeded = (action: 'single' | 'sequential') => {
+    if (seedDone) return false;
+    setPendingAction(action);
+    if (!seedRunning) seedSearchStart.mutate();
+    return true;
+  };
   const runSequential = () => {
     m.reset();
+    if (startSeedSearchIfNeeded('sequential')) return;
     seq.mutate({
       count: count ? Number(count) : null,
       seed: seed ? Number(seed) : null,
@@ -378,6 +411,7 @@ export default function Recommend() {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     seq.reset();
+    if (startSeedSearchIfNeeded('single')) return;
     m.mutate({
       strategy,
       count: count ? Number(count) : null,
@@ -523,19 +557,23 @@ export default function Recommend() {
               <input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} /> 저장 (성과 추적)
             </label>
           </FormSlot>
-          <FormSlot className="shrink-0">
+          <FormSlot className="ml-auto shrink-0">
             <span className="inline-flex flex-nowrap items-center gap-2 whitespace-nowrap" data-testid="recommend-buttons">
-              <button type="submit" className={btnCls} disabled={m.isPending || seq.isPending}>
-                {m.isPending ? '생성 중…' : '추천 생성'}
+              <button type="submit" className={btnCls} disabled={m.isPending || seq.isPending || pendingAction !== null} title={pendingAction === 'single' ? 'SEED 탐색이 완료되는 즉시 이 설정으로 추천을 생성합니다' : undefined}>
+                {pendingAction === 'single' ? 'SEED 대기 중…' : m.isPending ? '생성 중…' : '추천 생성'}
               </button>
               <button
                 type="button"
                 className={`${btnCls} bg-emerald-700 hover:bg-emerald-800`}
-                disabled={m.isPending || seq.isPending || !strategies.data?.length}
-                title={`전략 선택의 ${strategies.data?.length ?? 0}개 전략을 순서대로 같은 옵션(개수·seed·최대 공유·저장)으로 생성합니다. 전략마다 별도 batch, 균등 기준선은 'uniform' 전략이 담당`}
+                disabled={m.isPending || seq.isPending || pendingAction !== null || !strategies.data?.length}
+                title={
+                  pendingAction === 'sequential'
+                    ? 'SEED 탐색이 완료되는 즉시 이 설정으로 순차 생성을 시작합니다'
+                    : `전략 선택의 ${strategies.data?.length ?? 0}개 전략을 순서대로 같은 옵션(개수·seed·최대 공유·저장)으로 생성합니다. 전략마다 별도 batch, 균등 기준선은 'uniform' 전략이 담당`
+                }
                 onClick={runSequential}
               >
-                {seq.isPending ? `순차 생성 중… (${strategies.data?.length ?? 0}전략)` : '추천 생성(순차)'}
+                {pendingAction === 'sequential' ? 'SEED 대기 중…' : seq.isPending ? `순차 생성 중… (${strategies.data?.length ?? 0}전략)` : '추천 생성(순차)'}
               </button>
             </span>
           </FormSlot>
@@ -547,12 +585,13 @@ export default function Recommend() {
               <span className="text-indigo-700 dark:text-indigo-300">
                 SEED 탐색 중 — {seedJob.data.iterations.toLocaleString()}회 시도 (목표 {rankLabel(seedJob.data.target_rank)}, 대상 {seedJob.data.target_draw_no}회 vs 직전 {seedJob.data.compare_draw_no}회 실제 결과) ·{' '}
                 {seedJob.data.elapsed_seconds.toFixed(1)}s 경과
+                {pendingAction && <> — 완료되면 자동으로 {pendingAction === 'single' ? '추천을' : '순차 생성을'} 시작합니다</>}
               </span>
             )}
             {seedJob.data.status === 'done' && (
               <span className="text-emerald-700 dark:text-emerald-300">
                 SEED 값 생성 완료 — {seedJob.data.iterations.toLocaleString()}회 만에 {rankLabel(seedJob.data.target_rank)} 달성({labelOf(seedJob.data.matched_strategy ?? '')}) → seed 에{' '}
-                {seedJob.data.seed} 를 입력했습니다
+                {seedJob.data.seed} 를 입력했습니다{seedJob.data.env_updated && <> · 다음에도 기본값으로 쓰이도록 .env.local 에 저장했습니다</>}
               </span>
             )}
             {seedJob.data.status === 'stopped' && (

@@ -74,3 +74,28 @@ def test_seed_search_stop_before_match(seeded: None, client) -> None:  # noqa: A
 def test_seed_search_unknown_job_404(seeded: None, client) -> None:  # noqa: ANN001
     assert client.get("/api/v1/recommend/seed-search/does-not-exist").status_code == 404
     assert client.post("/api/v1/recommend/seed-search/does-not-exist/stop").status_code == 404
+
+
+def test_seed_search_done_updates_env_local(seeded: None, client, monkeypatch, tmp_path) -> None:  # noqa: ANN001
+    """v1.24: 일치(status=done) 시 .env.local 의 LOTTO_RANDOM_SEED 를 그 시행 횟수로 갱신한다."""
+    from app.core import env_file
+
+    p = tmp_path / ".env.local"
+    p.write_text("LOTTO_POOL_SIZE=45\nLOTTO_RANDOM_SEED=20260908\nLOTTO_MAIN_COUNT=6\n", encoding="utf-8")
+    monkeypatch.setattr(env_file, "ENV_LOCAL_PATH", p)
+
+    r = client.post("/api/v1/recommend/seed-search", json={"target_draw_no": 1000, "target_rank": 5})
+    done = _poll(client, r.json()["job_id"])
+    assert done["status"] == "done" and done["env_updated"] is True
+    text = p.read_text(encoding="utf-8")
+    assert f"LOTTO_RANDOM_SEED={done['seed']}" in text
+    assert "LOTTO_POOL_SIZE=45" in text and "LOTTO_MAIN_COUNT=6" in text  # 다른 줄 보존
+
+
+def test_seed_search_env_update_skipped_when_file_missing(seeded: None, client, monkeypatch, tmp_path) -> None:  # noqa: ANN001
+    from app.core import env_file
+
+    monkeypatch.setattr(env_file, "ENV_LOCAL_PATH", tmp_path / "does-not-exist" / ".env.local")
+    r = client.post("/api/v1/recommend/seed-search", json={"target_draw_no": 1000, "target_rank": 5})
+    done = _poll(client, r.json()["job_id"])
+    assert done["status"] == "done" and done["env_updated"] is False

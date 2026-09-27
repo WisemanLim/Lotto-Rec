@@ -826,6 +826,7 @@ export interface SeedSearchJob {
   matched_strategy: string | null;
   matched_ticket: number[] | null;
   stop_reason: 'user' | 'max_iterations' | null;
+  env_updated: boolean;
   max_iterations: number;
   elapsed_seconds: number;
   error: string | null;

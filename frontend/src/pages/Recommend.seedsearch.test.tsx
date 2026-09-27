@@ -128,3 +128,13 @@ test('레이아웃(v1.23): 폼이 flex-wrap 컴팩트 배치이고 체크박스 
   const saveLabel = labelEls.find((l) => l.textContent?.includes('저장 (성과 추적)')) as HTMLElement;
   expect(saveLabel.className).toMatch(/whitespace-nowrap/);
 });
+
+test('레이아웃(v1.25): "추천 생성(순차)" 버튼 묶음이 폼 행의 우측 끝에 맞춰진다(margin-left: auto)', async () => {
+  mount();
+  await screen.findByRole('button', { name: 'SEED 값 생성' });
+  const genBtn = screen.getByRole('button', { name: '추천 생성' });
+  const buttonGroup = genBtn.closest('.ml-auto') as HTMLElement | null;
+  expect(buttonGroup).not.toBeNull();
+  expect(buttonGroup!.className).toMatch(/ml-auto/);
+  expect(buttonGroup).toContainElement(screen.getByRole('button', { name: '추천 생성(순차)' }));
+});
