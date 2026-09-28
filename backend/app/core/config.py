@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     lotto_lottery_pick_count: int = Field(default=5, ge=1, le=50)  # 내 번호 '등록된 번호로 추첨 시도' 선택 개수 (S5.5)
     lotto_seed_search_max_iter: int = Field(default=20_000_000, ge=1000)  # SEED 값 생성 무작위 탐색 상한 (S4.13)
     lotto_recent_draws: int = Field(default=5, ge=1, le=20)  # 내 번호 최근 당첨번호 회차 수 (S5.8)
+    lotto_exclude_trend_draws: int = Field(default=30, ge=3, le=200)  # 제외 번호 '자동' 동향 분석 회차 수 (S4.15)
+    lotto_exclude_recent_draws: int = Field(default=5, ge=1, le=50)  # 제외 번호 '자동' 직전 N회 필터 (S4.15)
     lotto_timezone: str = "Asia/Seoul"  # 표시 시간대(IANA). 저장은 UTC
 
     # 고정 당첨금 (회차 데이터 부재 — 가정값, PRD Q4)

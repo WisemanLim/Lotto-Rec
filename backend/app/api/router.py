@@ -37,6 +37,8 @@ def get_config() -> dict[str, object]:
         "lotto_min_effect_delta": settings.lotto_min_effect_delta,
         "lotto_run_retention": settings.lotto_run_retention,
         "lotto_recent_draws": settings.lotto_recent_draws,
+        "lotto_exclude_trend_draws": settings.lotto_exclude_trend_draws,
+        "lotto_exclude_recent_draws": settings.lotto_exclude_recent_draws,
         "lotto_lottery_pick_count": settings.lotto_lottery_pick_count,
         "lotto_seed_search_max_iter": settings.lotto_seed_search_max_iter,
         "lotto_prize_rank3_default": settings.lotto_prize_rank3_default,

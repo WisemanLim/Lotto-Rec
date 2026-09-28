@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 | :-- | :-- |
-| 문서 버전 | 1.30 (S4.13 SEED 값 생성은 제외 번호 미적용 · S4.14 제외 번호를 추천 생성에도 적용 · 추천 개수 상한 200 · S4.10 자동 등록 제외 번호 · S5.11 평가 클릭 시 저장 목록 결과순 정렬 · S4.13 'seed 신규' 체크박스·무조건 생성 방지·중지 시 기존 seed 사용 · S4.13 폼 버튼 우측 정렬 · S4.13 SEED 완료 시 .env.local 기본값 갱신·추천 생성 자동 연계 · S4.13 SEED 값 생성·폼 레이아웃 압축(한 줄 체크박스·간격 최소화) · S5.5 추첨 개수 `.env`·입력 박스 · S5.10 안내 문구 배열 · S5.10 추첨 시도 ★ 상단 정렬·최근 6회차 출현 테두리 · S4.10·S4.12·S5.9 진행 예정 회차만 동작하는 방어 · S8.6-1 성과 추적 입력 영역 숨김 · S1.7 결과 입력 옆 과거 6회차 요약 · S1.6 등위별 총 당첨금·자동계산·영역 구분 · S1.6 설정/실행 결과 입력 재구성·1~5등 당첨정보 · S8.7 추천 정합성 분석 · S4.12·S5.9 현재 회차 초기화 · S5.8 저장된 번호 헤더 정렬·최근 당첨번호 · S7.1 docker compose 구동 · S4.11 추천 생성(순차) · S5.7 저장된 번호 회차 전환·필터 · 회차간 교차 공출현 S2.13 · `LOTTO_CROSS_DRAW_LAG` · 군 A/B/전체 재분석 1,241회 포함) |
+| 문서 버전 | 1.31 (S4.15 제외 번호 '자동' — 최근 회차 동향(최다·최소 추첨) × 직전 N회 교집합 무작위 추천 · S4.13 SEED 값 생성은 제외 번호 미적용 · S4.14 제외 번호를 추천 생성에도 적용 · 추천 개수 상한 200 · S4.10 자동 등록 제외 번호 · S5.11 평가 클릭 시 저장 목록 결과순 정렬 · S4.13 'seed 신규' 체크박스·무조건 생성 방지·중지 시 기존 seed 사용 · S4.13 폼 버튼 우측 정렬 · S4.13 SEED 완료 시 .env.local 기본값 갱신·추천 생성 자동 연계 · S4.13 SEED 값 생성·폼 레이아웃 압축(한 줄 체크박스·간격 최소화) · S5.5 추첨 개수 `.env`·입력 박스 · S5.10 안내 문구 배열 · S5.10 추첨 시도 ★ 상단 정렬·최근 6회차 출현 테두리 · S4.10·S4.12·S5.9 진행 예정 회차만 동작하는 방어 · S8.6-1 성과 추적 입력 영역 숨김 · S1.7 결과 입력 옆 과거 6회차 요약 · S1.6 등위별 총 당첨금·자동계산·영역 구분 · S1.6 설정/실행 결과 입력 재구성·1~5등 당첨정보 · S8.7 추천 정합성 분석 · S4.12·S5.9 현재 회차 초기화 · S5.8 저장된 번호 헤더 정렬·최근 당첨번호 · S7.1 docker compose 구동 · S4.11 추천 생성(순차) · S5.7 저장된 번호 회차 전환·필터 · 회차간 교차 공출현 S2.13 · `LOTTO_CROSS_DRAW_LAG` · 군 A/B/전체 재분석 1,241회 포함) |
 | 작성일 | 2026-09-08 |
 | 상태 | Draft → 구현 중 보완 (living document) |
 | 근거 문서 | `.docs/Perplexity-로또번호 무작위 추출 통계분석.md`, `.docs/lotto(~1240).xlsx` |
@@ -404,6 +404,7 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
   - **추천 생성과 자동 연계 — 'seed 신규' 체크박스**(v1.26, 사용자 요청으로 v1.24 동작 개정) — 'SEED 값 생성' 버튼 **옆에 'seed 신규' 체크박스**(기본 **해제**)를 둔다. '추천 생성'·'추천 생성(순차)' 클릭 시: (a) 이번 화면에서 SEED 탐색이 **이미 완료**돼 seed 가 채워져 있으면 **즉시** 추천을 생성한다(체크박스 무관). (b) 아직 완료 전일 때 — **'seed 신규'가 해제**돼 있으면(기본값) **탐색을 시작하지 않고 현재 seed 입력값(빈칸이면 `.env` 기본값)으로 즉시** 추천을 생성한다(= v1.24 의 "매번 무조건 새 SEED 탐색" 문제를 방지). **'seed 신규'를 체크**했을 때만 클릭 시 **현재 희망 등수**로 SEED 탐색을 (재)시작하고 완료를 기다렸다가 **완료되는 순간 그 seed 로 자동으로 추천을 생성**한다 — 진행 중에는 두 생성 버튼 모두 'SEED 대기 중…' 으로 비활성 표시되고, SEED 상태 줄에 자동 진행 안내를 덧붙인다. **대기 중 'SEED 생성 중지'를 누르면**(v1.26) 예약된 추천 생성을 취소하지 않고, **현재 seed 입력값(탐색 시작 전 값 — 빈칸이면 `.env` 기본값)을 그대로 사용해 추천을 생성**한다(상한 도달 자동 중지도 동일하게 처리; 탐색 자체가 서버 오류로 끝난 경우는 안전을 위해 기존과 같이 예약을 취소하고 추천을 생성하지 않는다). **주의**: 'seed 신규' 체크 + 희망 등수 1등(기본값)이면 평균 수 분(§S4.13 성능 벤치마크)이 걸릴 수 있다 — 짧게 끝내려면 희망 등수를 낮추거나 'SEED 값 생성'으로 미리 완료해 둔다.
 
 - S4.14 (v1.29, 사용자 요청) **제외 번호를 추천 생성에도 적용**: S4.10 의 '제외 번호' 그리드(1~45, 화면 상태 공유)는 '내 번호로 자동 등록'뿐 아니라 **'추천 생성'·'추천 생성(순차)'** 클릭 시에도 적용된다 — 선택된 번호가 **하나라도 포함된 조합은 생성하지 않는다**(거부 표본추출: 생성된 조합이 제외 번호를 포함하면 버리고 다시 뽑음, 기존 커버리지 제약과 같은 재시도 루프 재사용). 제외 번호가 많아 유효 조합을 찾기 어려우면 기존 커버리지 제약과 동일하게 일부만 생성되고 `warning` 으로 보고한다(오류로 중단하지 않음). API `POST /recommend`·`POST /recommend/sequential` 에 `exclude_numbers?`(1–45) 파라미터를 추가한다.
+- S4.15 (v1.31, 사용자 요청) **제외 번호 '자동' 추천(추첨 동향 기반)**: '제외 번호' 타이틀 우측에 **'자동'** 버튼을 둔다. 클릭 시 최근 `LOTTO_EXCLUDE_TREND_DRAWS`(기본 **30**)회의 번호별 추첨 횟수를 집계해 **가장 많이 추첨된 번호**와 **가장 적게 추첨된 번호**를 각각 `LOTTO_EXCLUDE_TREND_DRAWS // 3`개(기본 10+10=20개, 동률은 번호 오름차순)씩 뽑아 **동향 후보 20개**로 삼고, 이 후보 중 **직전 `LOTTO_EXCLUDE_RECENT_DRAWS`(기본 5)회에 실제로 추첨된 번호와의 교집합**을 구한 뒤(가정: `LOTTO_EXCLUDE_TREND_DRAWS`·`LOTTO_EXCLUDE_RECENT_DRAWS` 모두 본번호 6개 기준, 보너스 제외) 그 교집합에서 **최대 `LOTTO_EXCLUDE_RECENT_DRAWS`개를 무작위로 추출**(seed 미지정 시 **클릭마다 새 무작위 seed** — 고정 `LOTTO_RANDOM_SEED` 를 쓰지 않음, 사용 seed 는 응답에 남아 `seed` 지정 시 재현 가능; v1.31.1 버그 수정)해 제외 번호로 채운다 — **교체**(기존 수동 선택을 지우고 새 결과로 대체). 교집합이 비어 있으면 선택 없음. 화면 상태만 채울 뿐 저장·서버 반영 없음(S4.10 그리드와 동일 정책). API `POST /recommend/exclude-suggestion` {trend_draws?, recent_draws?, seed?} → {selected, trend_draws, recent_draws, trend_draws_used, hot_candidates, cold_candidates, recent_numbers, intersection, seed, note}.
 
 ### E5. 사용자 예측(통계기반 평가) (P0)
 
@@ -616,6 +617,8 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | `LOTTO_MIN_EFFECT_DELTA` | 최소 효과크기 | 0.25 | 네트워크 엣지 $\lvert\mathrm{Lift}^*-1\rvert\ge\delta$ |
 | `LOTTO_CROSS_DRAW_LAG` | 회차간 전/후 간격 | 5 | 회차간 교차 공출현(S2.13)의 최대 lag $L$ (1–50). lag 1..$L$ 개별 + 창 합산, 경계 회차는 간격 내 가능한 쌍만 포함. 변경 후 backend 재시작·재분석 필요(run 생성 시 고정, 섹션 `max_lag`). `/config` 로 노출(v1.11.1) |
 | `LOTTO_RECENT_DRAWS` | 최근 당첨번호 회차 수 | 5 | 내 번호 '저장된 번호' 타이틀 우측에 표시할 최근 당첨번호 회차 수(S5.8, 1–20). `/config` `lotto_recent_draws` 로 노출. local(honcho)에서는 uvicorn 이 루트 `.env`/`.env.local` 을 감시해 **저장 즉시 자동 재기동·반영**(v1.14.3), docker 는 `make docker-restart` |
+| `LOTTO_EXCLUDE_TREND_DRAWS` | 제외 번호 동향 분석 회차 수 | 30 | 제외 번호 '자동'(S4.15)의 동향 분석 대상 최근 회차 수(3–200). 후보 개수 = 이 값 // 3(최다·최소 각각). `/config` `lotto_exclude_trend_draws` 로 노출 |
+| `LOTTO_EXCLUDE_RECENT_DRAWS` | 제외 번호 직전 회차 수 | 5 | 제외 번호 '자동'(S4.15)에서 동향 후보와 교집합을 구할 직전 회차 수이자 최종 무작위 추출 개수 상한(1–50). `/config` `lotto_exclude_recent_draws` 로 노출 |
 | `LOTTO_LOTTERY_PICK_COUNT` | 추첨 시도 선택 개수 | 5 | 내 번호 '등록된 번호로 추첨 시도'(S5.5)에서 ★ 로 선택할 번호(티켓) 개수 기본값(1–50). `/config` `lotto_lottery_pick_count` 로 노출, 화면의 입력 박스로 세션 단위 수정 가능. local 은 저장 즉시 반영(uvicorn 이 `.env.local` 감시) |
 | `LOTTO_SEED_SEARCH_MAX_ITER` | SEED 탐색 최대 시행 횟수 | 20000000 | S4.13 '`SEED 값 생성`' 무작위 탐색의 안전 상한(도달 시 자동 중지, `status=stopped`). `/config` `lotto_seed_search_max_iter` 로 노출 |
 | `LOTTO_BACKEND_PORT` / `LOTTO_FRONTEND_PORT` | 포트 | 8000 / 5173 | 로컬 바인딩 127.0.0.1 |
@@ -645,6 +648,7 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | GET | `/api/v1/validation/runs/{id}` | 재현성·동질성·backtest·scoring 결과 |
 | POST | `/api/v1/recommend` | {strategy, count?, seed?, coverage?, constraints?, exclude_numbers?(1–45, S4.14)} → tickets + scorecards + `past_wins`(과거 1·2등 회차, S4.9) + backtest 요약 |
 | POST | `/api/v1/recommend/auto-register` | {target_draw_no?, seed?, exclude_numbers?} → 무작위 빈도 상위 5 위치 → 전략별 최신 batch 티켓을 내 번호로 등록, 제외 번호 포함 티켓은 skip(`excluded_positions`) (S4.10) |
+| POST | `/api/v1/recommend/exclude-suggestion` | (S4.15) 제외 번호 '자동' 추천 — {trend_draws?, recent_draws?, seed?} → {selected, hot_candidates, cold_candidates, recent_numbers, intersection, seed, note} (저장 없음, 순수 조회) |
 | POST | `/api/v1/recommend/seed-search` | (S4.13) SEED 무작위 탐색 시작 — {target_draw_no?, target_rank?} → {job_id, status, target_draw_no, compare_draw_no, target_rank, iterations, seed, max_iterations} (백그라운드, 미저장) |
 | GET | `/api/v1/recommend/seed-search/{job_id}` | (S4.13) 탐색 진행 상황/결과 폴링 |
 | POST | `/api/v1/recommend/seed-search/{job_id}/stop` | (S4.13) 탐색 중지 요청 |
@@ -796,6 +800,8 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 
 | 버전 | 일자 | 내용 |
 | :-- | :-- | :-- |
+| 1.31.1 | 2026-09-28 | 버그 수정(사용자 보고): '자동' 을 다시 눌러도 같은 번호만 선택됨 — seed 미지정 시 고정 `LOTTO_RANDOM_SEED` 를 써서 매번 같은 추출. 미지정이면 호출마다 새 무작위 seed(응답 `seed` 로 재현 가능, S4.10 자동 등록과 동일 규칙) (S4.15) |
+| 1.31 | 2026-09-28 | 사용자 요청: '제외 번호' 타이틀 우측 **'자동'** 버튼 — 최근 `LOTTO_EXCLUDE_TREND_DRAWS`(기본 30)회 동향에서 최다·최소 추첨 번호 각 회차수//3 개(기본 10+10)를 뽑고, 직전 `LOTTO_EXCLUDE_RECENT_DRAWS`(기본 5)회 출현 번호와의 교집합에서 무작위로 제외 번호를 채움(교체, `POST /recommend/exclude-suggestion`, S4.15). 부수: 제외 번호 안내 문구 글씨를 전략 설명 문구와 같은 스타일(`text-xs text-neutral-500`)로 축소 |
 | 1.30 | 2026-09-27 | 사용자 요청(명확화): 'SEED 값 생성'은 직전 실제 회차의 실제 당첨 번호를 맞히는 탐색이므로 제외 번호(S4.10/S4.14)를 적용하지 않음을 명시(`POST /recommend/seed-search` 는 `exclude_numbers` 미지원) (S4.13) |
 | 1.29 | 2026-09-27 | 사용자 요청: (1) S4.10 제외 번호를 '추천 생성'·'추천 생성(순차)' 클릭에도 적용(거부 표본추출, `POST /recommend`·`/recommend/sequential` 에 `exclude_numbers`, S4.14); (2) 추천 개수 상한을 50 → 200 으로 확대(`LOTTO_NUMBER_RECOMMENDATION_COUNT`·API·화면 입력) |
 | 1.28 | 2026-09-27 | 사용자 요청: '내 번호로 자동 등록' 필터 바와 이력 표 사이에 1~45 제외 번호 그리드(내 번호 평가와 동일 UI) 추가 — 선택한 번호가 포함된 (전략,위치) 조합은 등록 대상에서 제외(대체 없이 skip), `POST /recommend/auto-register` 에 `exclude_numbers` 추가, 응답에 `excluded_positions` (S4.10) |

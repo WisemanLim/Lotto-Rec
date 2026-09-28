@@ -43,6 +43,7 @@
  "POST /api/v1/experiments/runs/{experiment_id}/activate",
  "POST /api/v1/recommend",
  "POST /api/v1/recommend/auto-register",
+ "POST /api/v1/recommend/exclude-suggestion",
  "POST /api/v1/recommend/seed-search",
  "POST /api/v1/recommend/seed-search/{job_id}/stop",
  "POST /api/v1/recommend/sequential",

@@ -39,6 +39,21 @@ def strategies() -> list[dict]:
     return rsvc.strategy_catalog()
 
 
+class ExcludeSuggestionIn(BaseModel):
+    trend_draws: int | None = Field(None, ge=3, le=200, description="미지정 시 LOTTO_EXCLUDE_TREND_DRAWS")
+    recent_draws: int | None = Field(None, ge=1, le=50, description="미지정 시 LOTTO_EXCLUDE_RECENT_DRAWS")
+    seed: int | None = Field(None, description="미지정 시 매 호출 무작위(응답에 사용 seed 포함)")
+
+
+@router.post("/exclude-suggestion")
+def exclude_suggestion(body: ExcludeSuggestionIn, session: Session = Depends(get_session)) -> dict:
+    """S4.15 — 최근 trend_draws 회 동향(최다·최소 추첨 각 trend_draws//3 개) 중 직전 recent_draws 회
+    출현 번호와의 교집합에서 무작위로 제외 번호를 제안 ('제외 번호' 타이틀 우측 '자동' 버튼)."""
+    return rsvc.suggest_exclude_numbers(
+        session, trend_draws=body.trend_draws, recent_draws=body.recent_draws, seed=body.seed
+    )
+
+
 @router.post("")
 def recommend(body: RecommendIn, session: Session = Depends(get_session)) -> dict:
     try:

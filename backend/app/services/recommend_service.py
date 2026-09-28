@@ -178,6 +178,71 @@ def recommend_sequential(
     }
 
 
+def suggest_exclude_numbers(
+    session: Session,
+    *,
+    trend_draws: int | None = None,
+    recent_draws: int | None = None,
+    seed: int | None = None,
+) -> dict:
+    """제외 번호 '자동' 추천 (S4.15) — 최근 trend_draws 회의 번호 동향 중 가장 많이·적게 추첨된
+    번호 각 trend_draws // 3 개(기본 30→10+10=20개 후보)를 뽑고, 그중 직전 recent_draws 회에
+    실제로 나온 번호와 교집합을 구한 뒤 그 교집합에서 최대 recent_draws 개를 무작위로 추출해
+    제외 번호로 제안한다. 화면 상태만 채울 뿐 저장·부작용 없음(순수 조회)."""
+    trend_draws = trend_draws or settings.lotto_exclude_trend_draws
+    recent_draws = recent_draws or settings.lotto_exclude_recent_draws
+    seed = secrets.randbelow(2**31) if seed is None else seed  # 미지정 = 클릭마다 새 무작위(응답에 seed 기록)
+    mx = max_draw_no(session) or 0
+    pool = settings.lotto_pool_size
+    if mx == 0:
+        return {
+            "selected": [],
+            "trend_draws": trend_draws,
+            "recent_draws": recent_draws,
+            "trend_draws_used": 0,
+            "hot_candidates": [],
+            "cold_candidates": [],
+            "recent_numbers": [],
+            "intersection": [],
+            "seed": seed,
+            "note": "적재된 회차가 없습니다.",
+        }
+    trend_lo = max(1, mx - trend_draws + 1)
+    ds = load_draws(session, trend_lo, mx)
+    counts = np.bincount(ds.main.ravel(), minlength=pool + 1)[1 : pool + 1]
+    numbers = np.arange(1, pool + 1)
+    n_pick = max(1, trend_draws // 3)
+    hot_idx = np.lexsort((numbers, -counts))[:n_pick]
+    cold_idx = np.lexsort((numbers, counts))[:n_pick]
+    hot = sorted(int(numbers[i]) for i in hot_idx)
+    cold = sorted(int(numbers[i]) for i in cold_idx)
+    candidates = sorted(set(hot) | set(cold))
+    recent_lo = max(1, mx - recent_draws + 1)
+    recent_ds = load_draws(session, recent_lo, mx)
+    recent_numbers = sorted({int(x) for x in recent_ds.main.ravel()}) if recent_ds.T else []
+    intersection = sorted(set(candidates) & set(recent_numbers))
+    rng = np.random.default_rng(seed)
+    k = min(len(intersection), recent_draws)
+    selected = (
+        sorted(int(x) for x in rng.choice(np.array(intersection), size=k, replace=False)) if k > 0 else []
+    )
+    return {
+        "selected": selected,
+        "trend_draws": trend_draws,
+        "recent_draws": recent_draws,
+        "trend_draws_used": ds.T,
+        "hot_candidates": hot,
+        "cold_candidates": cold,
+        "recent_numbers": recent_numbers,
+        "intersection": intersection,
+        "seed": seed,
+        "note": (
+            f"최근 {ds.T}회 최다·최소 추첨 번호(각 {n_pick}개) 중 직전 {recent_draws}회 출현 번호의 "
+            f"교집합({len(intersection)}개)에서 무작위 {len(selected)}개 선택"
+        ),
+    }
+
+
 def _analysis_basis(ctx: strat.Context) -> dict:
     """추천이 근거한 분석 요약 (PRD S4.8): 군 A run, 이력 T, 상위 |z| 번호, 상위 Lift* 쌍."""
     z = ctx.z_scores()

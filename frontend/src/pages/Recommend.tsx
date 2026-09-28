@@ -315,6 +315,11 @@ export default function Recommend() {
   // v1.28 제외 번호 — 선택된 번호가 포함된 (전략, 위치) 조합은 등록하지 않는다(화면 상태만, 저장 없음)
   const [excludeNumbers, setExcludeNumbers] = useState<number[]>([]);
   const toggleExclude = (n: number) => setExcludeNumbers((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n].sort((a, b) => a - b)));
+  // S4.15 제외 번호 '자동' — 최근 회차 동향(최다·최소 추첨) × 직전 N회 교집합에서 무작위 제안, 기존 선택을 교체
+  const excludeSuggest = useMutation({
+    mutationFn: () => api.recommend.excludeSuggestion(),
+    onSuccess: (r) => setExcludeNumbers(r.selected),
+  });
   const autoReg = useMutation({
     mutationFn: () =>
       api.recommend.autoRegister({
@@ -551,8 +556,18 @@ export default function Recommend() {
           {/* v1.29(S4.14) 제외 번호 — 마지막 전략 카드 우측 빈 공간에 배치, '추천 생성'·'추천 생성(순차)'·'내 번호로 자동 등록' 공통 적용 */}
           <div className="lg:col-span-3">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm font-medium">
-                제외 번호 <span className="font-normal text-neutral-500">('추천 생성'·'추천 생성(순차)'·'내 번호로 자동 등록' 시 이 번호가 포함된 조합은 생성·등록하지 않습니다)</span>
+              <span className="inline-flex flex-wrap items-baseline gap-x-2">
+                <span className="text-sm font-medium">제외 번호</span>
+                <span className="text-xs text-neutral-500">('추천 생성'·'추천 생성(순차)'·'내 번호로 자동 등록' 시 이 번호가 포함된 조합은 생성·등록하지 않습니다)</span>
+                <button
+                  type="button"
+                  className="rounded border border-neutral-300 px-1.5 py-0.5 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  disabled={excludeSuggest.isPending}
+                  title="최근 회차 동향(가장 많이·적게 추첨된 번호) 중 직전 회차에 나온 번호를 무작위로 제외 번호에 채웁니다(기존 선택을 교체)"
+                  onClick={() => excludeSuggest.mutate()}
+                >
+                  {excludeSuggest.isPending ? '자동 계산 중…' : '자동'}
+                </button>
               </span>
               {excludeNumbers.length > 0 && (
                 <span className="text-xs text-neutral-600 dark:text-neutral-300">
@@ -563,6 +578,8 @@ export default function Recommend() {
                 </span>
               )}
             </div>
+            {excludeSuggest.isError && <ErrorBox error={excludeSuggest.error} />}
+            {excludeSuggest.data && <p className="mb-2 text-xs text-neutral-500">{excludeSuggest.data.note}</p>}
             <div className="grid grid-cols-9 gap-1.5 sm:grid-cols-15" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(2rem, 1fr))' }} role="group" aria-label="제외 번호 선택">
               {NUMS.map((n) => (
                 <LottoBall key={n} n={n} size="sm" onClick={() => toggleExclude(n)} selected={excludeNumbers.includes(n)} />

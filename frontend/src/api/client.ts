@@ -81,6 +81,8 @@ export interface AppConfig {
   lotto_min_effect_delta?: number;
   lotto_run_retention?: number;
   lotto_recent_draws?: number;
+  lotto_exclude_trend_draws?: number;
+  lotto_exclude_recent_draws?: number;
   lotto_lottery_pick_count?: number;
   lotto_seed_search_max_iter?: number;
   lotto_prize_rank3_default?: number;
@@ -730,6 +732,8 @@ export interface RecommendIn {
   max_shared?: number | null;
   include_control: boolean;
   save: boolean;
+  /** S4.14 — 이 번호가 하나라도 포함된 조합은 생성하지 않음 */
+  exclude_numbers?: number[];
 }
 
 /** 과거 회차 1·2등 일치 (PRD S4.9). rank 1 = 본번호 6개 동일, 2 = 5개 + 보너스. */
@@ -800,6 +804,8 @@ export interface SequentialIn {
   seed?: number | null;
   max_shared?: number | null;
   save: boolean;
+  /** S4.14 — 이 번호가 하나라도 포함된 조합은 생성하지 않음 */
+  exclude_numbers?: number[];
 }
 export interface SequentialResponse {
   sequence_id: string;
@@ -844,6 +850,25 @@ export interface RecommendHistoryItem {
   scorecard: Partial<Scorecard> | null;
   params: Record<string, unknown> | null;
   created_at: string | null;
+}
+
+/** 제외 번호 '자동' 추천 (PRD S4.15). */
+export interface ExcludeSuggestionIn {
+  trend_draws?: number;
+  recent_draws?: number;
+  seed?: number;
+}
+export interface ExcludeSuggestionResult {
+  selected: number[];
+  trend_draws: number;
+  recent_draws: number;
+  trend_draws_used: number;
+  hot_candidates: number[];
+  cold_candidates: number[];
+  recent_numbers: number[];
+  intersection: number[];
+  seed: number;
+  note: string;
 }
 
 /** 내 번호로 자동 등록 (PRD S4.10). */
@@ -1196,6 +1221,8 @@ export const api = {
     historySummary: (params?: Omit<RecommendHistoryParams, 'limit' | 'offset'>) =>
       get<RecommendHistorySummary>('/api/v1/recommend/history/summary', params),
     autoRegister: (body: AutoRegisterIn) => post<AutoRegisterResult>('/api/v1/recommend/auto-register', body),
+    // S4.15 제외 번호 '자동' 추천
+    excludeSuggestion: (body?: ExcludeSuggestionIn) => post<ExcludeSuggestionResult>('/api/v1/recommend/exclude-suggestion', body ?? {}),
     // S4.13 SEED 값 생성
     seedSearchStart: (body: SeedSearchIn) => post<SeedSearchJob>('/api/v1/recommend/seed-search', body),
     seedSearchStatus: (jobId: string) => get<SeedSearchJob>(`/api/v1/recommend/seed-search/${jobId}`),

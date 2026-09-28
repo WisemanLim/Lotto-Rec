@@ -20,12 +20,22 @@ const autoRegisterResponse = {
   total_registered: 0, total_merged: 0, policy: 'p',
 };
 
+const excludeSuggestionResponse = {
+  selected: [11, 23], trend_draws: 30, recent_draws: 5, trend_draws_used: 30,
+  hot_candidates: [1, 2, 11, 23, 3, 4, 5, 6, 7, 8], cold_candidates: [38, 39, 40, 41, 42, 43, 44, 45, 36, 37],
+  recent_numbers: [11, 22, 23, 30], intersection: [11, 23], seed: 1, note: 'note',
+};
+
 function fakeFetch(url: string, init?: RequestInit) {
   const method = init?.method ?? 'GET';
   const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { 'content-type': 'application/json' } });
   if (method === 'POST' && url.includes('/recommend/auto-register')) {
     posts.push({ url, body: JSON.parse(String(init?.body)) });
     return json(autoRegisterResponse);
+  }
+  if (method === 'POST' && url.includes('/recommend/exclude-suggestion')) {
+    posts.push({ url, body: JSON.parse(String(init?.body)) });
+    return json(excludeSuggestionResponse);
   }
   if (method === 'POST' && /\/recommend$/.test(url)) {
     posts.push({ url, body: JSON.parse(String(init?.body)) });
@@ -146,6 +156,22 @@ test('선택한 제외 번호가 "추천 생성(순차)" 요청에도 exclude_nu
   await waitFor(() => expect(posts.some((p) => /\/recommend\/sequential$/.test(p.url))).toBe(true));
   const call = posts.find((p) => /\/recommend\/sequential$/.test(p.url));
   expect(call!.body).toMatchObject({ exclude_numbers: [23] });
+});
+
+test('"자동" 버튼을 누르면 추첨 동향 기반 제외 번호를 서버에서 받아와 기존 선택을 교체한다 (S4.15)', async () => {
+  mount();
+  await screen.findByRole('group', { name: '제외 번호 선택' });
+  // 기존 수동 선택(9) — '자동' 클릭 시 교체되어야 함
+  fireEvent.click(screen.getByRole('button', { name: '9' }));
+  expect(screen.getByRole('button', { name: '9' })).toHaveAttribute('aria-pressed', 'true');
+
+  fireEvent.click(screen.getByRole('button', { name: '자동' }));
+  await waitFor(() => expect(posts.some((p) => p.url.includes('/recommend/exclude-suggestion'))).toBe(true));
+
+  await waitFor(() => expect(screen.getByRole('button', { name: '11' })).toHaveAttribute('aria-pressed', 'true'));
+  expect(screen.getByRole('button', { name: '23' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: '9' })).toHaveAttribute('aria-pressed', 'false'); // 교체됨
+  expect(screen.getByText('선택 2개: 11, 23')).toBeInTheDocument();
 });
 
 test('추천 개수 입력란은 최대 200까지 허용한다 (v1.29)', async () => {
