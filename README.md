@@ -26,13 +26,13 @@
 
 ## 사전 요구사항
 
-Python 3.12+, [uv](https://docs.astral.sh/uv/), Node 22+, pnpm 9, GNU Make. Docker 는 선택(local 미사용).
+Python 3.12+, [uv](https://docs.astral.sh/uv/), Node 22+, pnpm 9, GNU Make. Docker 는 선택(honcho 실행에는 불필요, `make local-build`·`make <env>-build` 컨테이너 실행에만 필요).
 
 ## 빠른 시작
 
 ```bash
 make preflight       # 도구 점검
-make local-build     # uv sync + pnpm install, .env.local 생성(example 복사)
+make local-install   # uv sync + pnpm install, .env.local 생성(example 복사)  ※ v1.32 에서 local-build → local-install
 make db-migrate      # data/lotto.db 생성 (Alembic)
 make db-seed         # .docs/lotto(~1240).xlsx 중 1~1,000회(군 A) 적재
 make local-all       # backend http://127.0.0.1:8000/docs · frontend http://127.0.0.1:5173
@@ -45,12 +45,32 @@ Docker 로 구동(현재 환경, S7.1 — honcho 대신 컨테이너, 같은 `./
 
 ```bash
 make local-stop                  # honcho 가 8000/5173 을 쓰고 있으면 먼저 정리 (또는 아래처럼 다른 포트)
-make docker-all                  # 이미지 빌드 + api/web 기동. api 는 시작 시 alembic upgrade head 자동
+make local-build                 # = make docker-all: 이미지 빌드 + api/web 기동. api 는 시작 시 alembic upgrade head 자동
 LOTTO_DOCKER_SEED=1 make docker-all   # 빈 DB 라면 원천 xlsx 전체 적재까지
 make docker-logs SVC=api         # [entrypoint] alembic upgrade head → uvicorn 확인
 make docker-ps / docker-stop     # 상태 / 정리(호스트 ./data 유지)
 LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all   # honcho 와 동시 실행 시
 ```
+
+환경별 docker compose (S7.2 — `make <env>-build`, env = local · dev · staging · prod):
+
+```bash
+make dev-build        # .env.dev 없으면 .env.dev.example 복사 → 이미지 빌드 + 기동 (api :18000 · web :15173)
+make staging-build    # api :28000 · web :25173
+make prod-build       # api :38000 · web :35173
+make prod-ps / prod-logs SVC=api / prod-restart / prod-stop
+make prod-all         # 빌드 없이 기동(이미지 없으면 빌드)
+make db-migrate ENV=prod   # 호스트에서 .env.prod 의 DB(data/lotto-prod.db)에 alembic 적용
+```
+
+| 환경 | 설정 파일 | compose 프로젝트 | api / web 포트 | SQLite · 캐시 | 시드 |
+|---|---|---|---|---|---|
+| local | `.env.local` | `lotto-rec` (docker-* 공유) | 8000 / 5173 | `data/lotto.db` · `data/cache` | `LOTTO_DOCKER_SEED=1` 지정 시 |
+| dev | `.env.dev` ← `.env.dev.example` | `lotto-rec-dev` | 18000 / 15173 | `data/lotto-dev.db` · `data/cache-dev` | 기본 1(멱등) |
+| staging | `.env.staging` ← `.env.staging.example` | `lotto-rec-staging` | 28000 / 25173 | `data/lotto-staging.db` · `data/cache-staging` | 기본 1 |
+| prod | `.env.prod` ← `.env.prod.example` | `lotto-rec-prod` | 38000 / 35173 | `data/lotto-prod.db` · `data/cache-prod` | 기본 1 |
+
+프로젝트·포트·DB 가 분리돼 여러 환경을 동시에 띄울 수 있다. 모든 환경의 web 은 Vite dev 서버 이미지(정적 빌드 서빙 아님 — PRD §7 local 전용 원칙).
 
 첫 사용 흐름: 설정 화면에서 **분석 실행(군 A, quick)** → 검증 화면에서 **검증 실행(1,001~1,240회 replay)** → 추천/내 번호/성과 추적.
 검증 실행은 군 B 실데이터를 DB 에 삽입하므로 이후 데이터는 1,240회가 된다(군 B 라벨 유지).
@@ -60,19 +80,20 @@ LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all   # honcho �
 | 명령 | 설명 |
 |---|---|
 | `make preflight` | 런타임·도구 점검 (Docker 는 WARN) |
-| `make local-build` | 의존성 설치 (`uv --directory backend sync`, `cd frontend && pnpm install`) |
+| `make local-install` | 호스트 의존성 설치 (`uv --directory backend sync`, `cd frontend && pnpm install`) + `.env.local` 생성 (v1.31 까지의 `local-build`) |
+| `make local-build` | **[local·docker]** api/web 이미지 빌드 + 컨테이너 기동 (= `make docker-all`, S7.2). `make local-stop` 이 이 컨테이너도 정리 |
 | `make local-all` / `local-logs` / `local-stop` / `local-restart` / `local-ps` | backend+frontend 일괄 기동/로그/종료/재기동/상태 (honcho 백그라운드, `PROC_MGR=pm2` 대안, `LOCAL_INFRA=` 로 docker infra 선택) |
 | `make test` / `make lint` | pytest + vitest / ruff + mypy + eslint + tsc |
 | `make db-migrate` / `db-seed` / `db-reset` / `db-fresh` | Alembic 적용 / xlsx 군 A 증분 적재(`uv run python -m app.seed [--all\|--max-draw N]`) / SQLite 재생성 / reset+seed |
 | `make reanalyze [PRESET=quick\|report\|deep] [COHORTS=A,B,ALL]` | **DB 파일 백업(`data/backup/lotto_<UTC>.db`) 후 군 A·B·ALL 재분석** (`python -m app.reanalyze`, trigger=reanalyze). 기존 run 은 삭제하지 않고 `LOTTO_RUN_RETENTION` 으로 정리 |
 | `make docker-all` / `docker-build` / `docker-logs` / `docker-stop` / `docker-restart` / `docker-ps` | **[docker, 현재 환경]** backend(api)+frontend(web) 컨테이너 빌드·기동(백그라운드)/빌드/로그(`SVC=api\|web`)/정리/재기동/상태. `.env.local` 을 env_file·포트로 사용, `./data`(SQLite·cache·backup)·`./.docs` 볼륨 공유. **api 는 시작 시 `alembic upgrade head` 자동 실행** 후 uvicorn, `LOTTO_DOCKER_SEED=1 make docker-all` 이면 xlsx 전체 적재. web 은 Vite dev 서버가 `/api` 를 `api:8000` 으로 프록시. honcho 가 같은 포트를 쓰고 있으면 안내 후 중단(`make local-stop` 또는 `LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all`) |
 | `make docker-migrate` / `docker-seed` / `docker-reanalyze` | [docker] 컨테이너로 마이그레이션만 / 원천 xlsx 전체 적재(멱등) / DB 백업 후 재분석(`PRESET`, `COHORTS`) |
-| `make <env>-*` | dev/staging/prod 컨테이너 타겟 — 표준 호환용, 본 프로젝트 미사용 |
+| `make <env>-build` / `<env>-all` / `<env>-logs` / `<env>-stop` / `<env>-restart` / `<env>-ps` | **[docker, env = dev\|staging\|prod]** 이미지 빌드+기동 / 기동 / 로그(`SVC=api\|web`) / 정리 / 재기동 / 상태 (S7.2). `.env.<env>` 없으면 `.env.<env>.example` 복사, 프로젝트 `lotto-rec-<env>` |
 
 ## 환경 변수 (`.env.local`)
 
 변수명 = 한국어 용어 직역 + `LOTTO_` 접두어. 전체 목록 `.env.local.example`, PRD §10.
-우선순위(낮→높): `.env.local.example`(기본값) → `.env` → `.env.local`(사용자 값) → OS 환경변수. 값 변경 후 `make local-restart`(uvicorn reload 는 .env 를 감시하지 않음).
+우선순위(낮→높): `.env.local.example`(기본값) → `.env` → `.env.local`(사용자 값) → OS 환경변수. local(honcho) 은 uvicorn 이 루트 `.env`/`.env.local` 을 감시해 저장 즉시 backend 가 재기동된다(v1.14.3). 프론트 Vite 는 v1.32 부터 `.env*` 를 감시하지 않으므로 `VITE_*` 값을 바꾸면 `make local-restart`. docker 는 `make docker-restart` / `make <env>-restart`.
 
 | 변수 | 기본 | 설명 |
 |---|---|---|
@@ -84,6 +105,7 @@ LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all   # honcho �
 | `LOTTO_RANDOM_SEED` | 20260908 | 재현성 seed |
 | `LOTTO_AUTO_RERUN_PRESET` | quick | 새 회차 삽입 후 자동 재분석(`off` 가능) |
 | `LOTTO_RUN_RETENTION` | 20 | 분석 run 보존 개수(0=무제한). 군별 최신·활성 실험 참조 run 은 보존 |
+| `LOTTO_AUTO_RESUME_RUNS` | true | 서버 재기동(uvicorn reload·컨테이너 재시작)으로 중단된 분석 run 을 시작 시 MC 체크포인트부터 자동 이어서 실행(S2.14). `false` 면 설정 화면 '이어서 실행' 버튼. `/config` `lotto_auto_resume_runs` |
 | `LOTTO_CROSS_DRAW_LAG` | 5 | **회차간 교차 공출현 전/후 간격 L**(1–50). lag 1..L 개별 + 창 합산 분석, 경계 회차(앞·뒤 L 회)는 간격 내 가능한 쌍만 포함. 변경 후 `make local-restart` → 새 분석 run(또는 `make reanalyze`). 현재 값은 `GET /config`·설정 화면에서 확인, 회차간 연관성 화면이 run 의 L 과 다르면 안내 |
 | `LOTTO_RECENT_DRAWS` | 5 | 내 번호 '저장된 번호' 타이틀 우측 **최근 당첨번호 회차 수**(1–20, S5.8). `/config` `lotto_recent_draws` 로 노출. local 은 **저장 즉시 자동 반영**(uvicorn 이 `.env.local` 감시), docker 는 `make docker-restart` |
 | `LOTTO_EXCLUDE_TREND_DRAWS` | 30 | 추천 '제외 번호' **'자동'**(S4.15)의 동향 분석 대상 최근 회차 수(3–200). 최다·최소 추첨 번호 각 이 값//3 개가 후보. `/config` `lotto_exclude_trend_draws` |
@@ -102,7 +124,7 @@ LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all   # honcho �
 |---|---|
 | 설정 | `GET /api/v1/config` |
 | 데이터 | `POST /data/import` (xlsx/csv 증분, `?overwrite`) · `POST /data/draws` (단일 회차, 1~5등 `prizeN`(1게임당 당첨금)·`winnersN`(당첨게임 수) 선택 입력; S1.6) · `GET /data/draws[/{n}]` · `GET /data/summary` · `GET /data/imports` |
-| 분석 | `POST /analysis/runs` {cohort A\|B\|ALL, preset, alpha?, correction?, seed?, mc_iterations?, sync?} · `GET /analysis/runs[/latest\|/{id}]` · `GET /analysis/runs/{id}/{section}` (summary, frequency, frequency_bonus, global, pairs, network, itemsets, groups, temporal, **cross_draw**, winners_model, null_summary, diff_vs_previous) · `DELETE /analysis/runs/{id}` · `POST /analysis/itemsets/query` {items \| target+given} |
+| 분석 | `POST /analysis/runs` {cohort A\|B\|ALL, preset, alpha?, correction?, seed?, mc_iterations?, sync?} · `GET /analysis/runs[/latest\|/{id}]` · `GET /analysis/runs/{id}/{section}` (summary, frequency, frequency_bonus, global, pairs, network, itemsets, groups, temporal, **cross_draw**, winners_model, null_summary, diff_vs_previous) · `DELETE /analysis/runs/{id}` · `POST /analysis/runs/{id}/resume`(S2.14 — `interrupted` run 이어서 실행, 그 외 409) · `POST /analysis/itemsets/query` {items \| target+given} |
 | 검증 | `POST /validation/runs` {strategies?, tickets_per_draw?, from_draw?, to_draw?, seed?, insert_draws, sync?} · `GET /validation/runs[/latest\|/{id}]` · `GET /validation/runs/{id}/{kind}` (meta, backtest, scoring, replication, homogeneity) |
 | 추천 | `GET /recommend/strategies` · `POST /recommend` {strategy, count?, seed?, max_shared?, include_control, save} → sets[].params_used·experiment, analysis_basis, tickets[].`past_wins`(과거 1·2등 일치 회차, S4.9) · `GET /recommend/history?origin=user\|backtest\|all&limit(≤50000)&offset&strategy&batch_id&target_draw_no`(행마다 `past_wins`) · `GET /recommend/history/summary?origin=` · `POST /recommend/sequential` {strategies?, count?, seed?, max_shared?, save} → **모든 전략 순차 생성**(카탈로그 순, 전략별 batch, control 미포함, 실패 전략은 `failed` 로 계속·보고; S4.11) · `DELETE /recommend/history[?target_draw_no=]` → **추천 초기화**(진행 예정 회차=최신+1 의 origin=user 추천 삭제, 결과 입력된 회차는 400; S4.12) · `POST /recommend/auto-register` {target_draw_no?, seed?} → 1..P 중 5개 무작위 추출 × 대상 회차 수 → 빈도 상위 5 위치의 전략별 최신 batch 티켓을 내 번호로 등록(같은 번호·회차는 ★ 중복 병합 → `merged_duplicates`/`total_merged`, S4.10·S5.6). `exclude_numbers?`(1~45) 로 넘긴 번호가 포함된 (전략,위치) 조합은 등록하지 않고 응답 `excluded_positions` 로 보고(대체 없이 skip; v1.28). 같은 제외 번호 선택(화면 전역 공유)은 `POST /recommend`·`POST /recommend/sequential` 에도 `exclude_numbers?` 로 적용되어 해당 번호가 포함된 조합을 생성하지 않는다(거부 표본추출; v1.29). 추천 개수 상한은 200(`count?`) · `POST /recommend/exclude-suggestion` {trend_draws?, recent_draws?, seed?} → **제외 번호 '자동'**: 최근 N회 최다·최소 추첨 번호(각 N//3 개) ∩ 직전 M회 출현 번호에서 최대 M개 무작위 → {selected, hot_candidates, cold_candidates, recent_numbers, intersection, seed, note}. seed 미지정 시 호출마다 새 무작위(저장 없음; 화면 '자동' 버튼은 기존 선택을 교체, S4.15) · `POST /recommend/seed-search` {target_draw_no?, target_rank?} → **SEED 값 생성**(대상 회차 직전 실제 회차 1등 번호 기준 무작위 탐색, 백그라운드·미저장) → {job_id, status, iterations, seed, matched_strategy, matched_ticket, max_iterations} · `GET /recommend/seed-search/{job_id}`(진행 폴링) · `POST /recommend/seed-search/{job_id}/stop`(중지) · **일치(`status:"done"`) 시 `.env.local` 의 `LOTTO_RANDOM_SEED` 를 그 seed 로 자동 갱신**(`env_updated`)해 다음에도 기본값으로 계속 쓰이게 함 · '추천 생성'·'추천 생성(순차)'는 **'seed 신규' 체크박스**(기본 해제)가 체크됐을 때만 SEED 탐색이 완료돼 있지 않으면 탐색을 (재)시작해 완료되는 즉시 자동 생성하고, 해제(기본) 상태거나 이미 완료돼 있으면 즉시 생성한다. 체크 상태로 대기 중 'SEED 생성 중지'를 누르면 생성을 취소하지 않고 탐색 시작 전 seed 값으로 진행한다(S4.13) |
 | 실험(전략 개선 루프) | `GET /experiments/strategy-params` · `POST /experiments/runs` {strategy, base_params?, search random\|coordinate, n_candidates, tune_from/to, holdout_from/to, tickets_per_draw, seed, sync} · `GET /experiments/runs[?strategy]` · `GET /experiments/runs/{id}` · `GET /experiments/lineage?strategy=` · `GET /experiments/active` · `POST /experiments/runs/{id}/activate` · `POST /experiments/deactivate?strategy=` · `DELETE /experiments/runs/{id}` |
@@ -170,6 +192,8 @@ curl -s localhost:8000/api/v1/analysis/runs/<run_id>/summary | jq .kpi
 | impl/18th | S5.6 내 번호 **★ 중복 ×n 표시** — 같은 번호·회차 등록은 병합(`user_ticket.dup_count/dup_labels`, Alembic 5b12a3e1), 다른 회차 동일 번호는 `same_number_ticket_ids` 로 묶음, 자동 등록 skip→merge, 용어 `duplicate_ticket`(중복 생성 ≠ 유의성 증거) | PASS 8/8 (pytest 63, vitest 35) |
 | impl/19th | 버그 수정 — 내 번호 보너스 포함 평가 시 백색 화면(스코어카드 `bonus` dict → int, `bonus_info` 분리, ScorecardView 방어 렌더) | PASS 4/4 (pytest 63, vitest 37) |
 | impl/20th | 버그 수정 — `.env.local` 값 미적용(pydantic-settings `env_file` 뒤 파일 우선 → example 이 덮어씀; 순서 example → `.env` → `.env.local` 로 수정, 우선순위 회귀 테스트) | PASS 6/6 (pytest 65, vitest 37) |
+| impl/51st | v1.33 **중단된 분석 run 이어서 실행**(S2.14) — 서버 재기동 시 `pending/running` 고아 run → `interrupted`(중단됨), MC 단계 약 30초 체크포인트(`data/cache/runs/<run_id>.mc.npz`, RNG 상태 포함 → 결과 비트 동일), 시작 시 자동 재개(`LOTTO_AUTO_RESUME_RUNS`), `POST /analysis/runs/{id}/resume`·설정 화면 '이어서 실행' 버튼 | PASS 9/9 (pytest 137, vitest 96, 실 DB 의 멈춘 run 자동 재개·api 재시작 시 21%→20% 체크포인트 이어감) |
+| impl/50th | v1.32 **버그 수정: SEED 값 생성 중 화면 새로고침·생성 실패** — done 시 `.env.local` 갱신이 uvicorn 재기동(인메모리 잡 유실 → 404)과 Vite 재시작(브라우저 전체 새로고침)을 유발. 종료 잡 스냅샷(`data/cache/seed_search/`, 갱신 전 기록) + Vite `.env*` 감시 제외 + **환경별 docker compose `make <env>-build`**(S7.2, `local-build`→`local-install`) | PASS 11/11 (pytest 130, vitest 95, dev/prod/local 컨테이너 기동·스모크) |
 | impl/49th | v1.31 **제외 번호 '자동'**(S4.15) — '제외 번호' 타이틀 우측 버튼, 최근 `LOTTO_EXCLUDE_TREND_DRAWS`회 최다·최소 추첨 번호(각 //3) ∩ 직전 `LOTTO_EXCLUDE_RECENT_DRAWS`회 출현 번호에서 무작위 추출해 선택 교체(`POST /recommend/exclude-suggestion`), 안내 문구를 전략 설명과 같은 작은 글씨로. v1.31.1: 클릭마다 같은 결과 버그(고정 seed) 수정. 부수: `RecommendIn`/`SequentialIn` TS 타입에 누락된 `exclude_numbers` 추가 | PASS 8/8 (pytest 127, vitest 95) |
 | impl/48th | v1.30 **SEED 값 생성은 제외 번호 미적용** 명문화(구조적 보증 테스트 추가) + `scripts/recommend-flow.sh`(제외 번호 → SEED 값 생성 → 추천 생성(순차) curl 시나리오) | PASS 6/6 (pytest 121) |
 | impl/47th | v1.29 **제외 번호를 추천 생성에도 적용 + 추천 개수 200 상한** — 제외 번호 그리드를 '전략 선택'의 '군 A 분석 가중' 카드 우측으로 이동해 '추천 생성'·'추천 생성(순차)'·'내 번호로 자동 등록' 셋 모두에 공유 적용(거부 표본추출). 추천 개수 상한 50 → 200 | PASS 8/8 (pytest 119, vitest 94) |
@@ -228,6 +252,7 @@ Lotto-Rec/
 | `./.env.local: syntax error near unexpected token '('` | `LOTTO_SOURCE_FILE` 값의 괄호 — 따옴표로 감싼다 |
 | `make db-seed` 가 0건 삽입 | 이미 적재됨(멱등). 군 B 까지 적재하려면 `uv --directory backend run python -m app.seed --all` |
 | 분석 run 이 `running` 에서 오래 머묾 | deep 프리셋(500k) 은 15분 이상. `GET /analysis/runs/{id}` 로 progress 확인 |
+| **서버 재기동 후 분석 run 이 '실행 중' 에서 진행률이 멈춤**(v1.32 이하) | 실행 스레드가 서버 프로세스와 함께 종료. v1.33 부터 시작 시 `interrupted` 로 표시 후 자동 재개(MC 는 마지막 체크포인트부터, 최대 약 30초분 재계산). `LOTTO_AUTO_RESUME_RUNS=false` 면 설정 화면 '이어서 실행'. honcho 와 docker 를 같은 `./data` DB 로 동시에 띄우지 말 것(양쪽이 재개) |
 | 추천이 `fallback: winners_model 없음` | 완료된 군 A 분석 run 이 없음 → 먼저 분석 실행 |
 | Tailwind 설정(darkMode 등) 변경 후 화면 반영 안 됨 | Vite dev 서버가 tailwind.config 를 시작 시 로드 → `make local-restart` |
 | 추천 이력이 "전체"인데 건수가 적음 | 이력 기본 출처 = 사용자 생성(저장 체크한 추천만). 검증 replay 가 만든 시뮬레이션 티켓은 출처 필터를 "검증 replay" 또는 "전체"로 |
@@ -236,6 +261,9 @@ Lotto-Rec/
 | 추첨 결과 등록 후 '내 번호' 저장 목록이 비어 보임 | S5.7 설계: 다음 회차 추천을 저장(또는 다음 회차 번호 등록)한 순간 목록이 다음 회차로 전환됨. 이전 회차 번호는 삭제되지 않음 — '대상 회차' 필터에서 해당 회차 또는 '전체 회차' 선택 |
 | 표 헤더의 (?) 툴팁 글이 박스 밖으로 한 줄로 흘러나감 | `DataTable` th/td 의 `whitespace-nowrap` 이 툴팁에 상속됨. v1.10.1 에서 `Term` 툴팁에 `whitespace-normal break-words`·`max-w-[calc(100vw-2rem)]` 강제 — 줄바꿈되며 세로 크기는 자동 |
 | Docker 없음 경고 | local 전용(SQLite)이라 무시 가능(`make local-all` 은 Docker 불필요). `make docker-*` 만 Docker 필요 |
+| **추천 'SEED 값 생성' 중 완료 전 화면이 갑자기 새로고침되고 생성이 실패**(v1.31 이하, local honcho) | done 시 서버가 `.env.local` `LOTTO_RANDOM_SEED` 를 갱신 → uvicorn `--reload` 가 재기동해 인메모리 잡이 사라지고(상태 조회 404), Vite 가 `../.env.local changed, restarting server` 로 브라우저를 전체 새로고침. v1.32 에서 종료 잡 스냅샷(`data/cache/seed_search/<job_id>.json`)으로 재기동 후에도 결과 조회, Vite 는 `.env*` 감시 제외. `.make/honcho.log` 에서 `WatchFiles detected changes` 는 정상(backend 만 재기동), `[vite] ... restarting server` 가 보이면 프론트 재기동 필요 |
+| `make dev-build` 등이 `Cannot connect to the Docker daemon` | Docker Desktop 미기동 — `open -a Docker` 후 재실행 |
+| `make <env>-build` 포트 충돌 | 환경별 기본 포트(18000/28000/38000 · 15173/25173/35173)를 `.env.<env>` 의 `LOTTO_BACKEND_PORT`/`LOTTO_FRONTEND_PORT` 로 변경 |
 | `make docker-all` 이 "honcho 가 실행 중" 으로 중단 | 같은 포트(8000/5173) 충돌 방지. `make local-stop` 후 실행하거나 `LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all` |
 | 컨테이너 api 가 `.env.local` 값을 못 읽음 / 경로 오류 | compose 가 `.env.local` 을 env_file 로 주입(따옴표 값 정상 처리). 컨테이너 루트는 `/srv/lotto`(DB `./data/lotto.db` → `/srv/lotto/data/lotto.db`). 값 변경 후 `make docker-restart SVC=api` |
 | web 컨테이너에서 API 호출 실패 | web 은 Vite dev 서버가 `/api` 를 `VITE_API_BASE=http://api:8000` 으로 프록시. api healthcheck 통과 후 기동(`depends_on: service_healthy`) — `make docker-logs SVC=api` 로 alembic/uvicorn 확인 |

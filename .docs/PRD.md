@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 | :-- | :-- |
-| 문서 버전 | 1.31 (S4.15 제외 번호 '자동' — 최근 회차 동향(최다·최소 추첨) × 직전 N회 교집합 무작위 추천 · S4.13 SEED 값 생성은 제외 번호 미적용 · S4.14 제외 번호를 추천 생성에도 적용 · 추천 개수 상한 200 · S4.10 자동 등록 제외 번호 · S5.11 평가 클릭 시 저장 목록 결과순 정렬 · S4.13 'seed 신규' 체크박스·무조건 생성 방지·중지 시 기존 seed 사용 · S4.13 폼 버튼 우측 정렬 · S4.13 SEED 완료 시 .env.local 기본값 갱신·추천 생성 자동 연계 · S4.13 SEED 값 생성·폼 레이아웃 압축(한 줄 체크박스·간격 최소화) · S5.5 추첨 개수 `.env`·입력 박스 · S5.10 안내 문구 배열 · S5.10 추첨 시도 ★ 상단 정렬·최근 6회차 출현 테두리 · S4.10·S4.12·S5.9 진행 예정 회차만 동작하는 방어 · S8.6-1 성과 추적 입력 영역 숨김 · S1.7 결과 입력 옆 과거 6회차 요약 · S1.6 등위별 총 당첨금·자동계산·영역 구분 · S1.6 설정/실행 결과 입력 재구성·1~5등 당첨정보 · S8.7 추천 정합성 분석 · S4.12·S5.9 현재 회차 초기화 · S5.8 저장된 번호 헤더 정렬·최근 당첨번호 · S7.1 docker compose 구동 · S4.11 추천 생성(순차) · S5.7 저장된 번호 회차 전환·필터 · 회차간 교차 공출현 S2.13 · `LOTTO_CROSS_DRAW_LAG` · 군 A/B/전체 재분석 1,241회 포함) |
+| 문서 버전 | 1.33 (S2.14 서버 재기동 시 중단된 분석 run 이어서 실행(MC 체크포인트·자동 재개·이어서 실행 버튼) · S4.13 SEED 값 생성 완료 시 화면 새로고침·잡 유실 버그 수정 · S7.2 `make <env>-build` 환경별 docker compose 빌드·구동 · S4.15 제외 번호 '자동' — 최근 회차 동향(최다·최소 추첨) × 직전 N회 교집합 무작위 추천 · S4.13 SEED 값 생성은 제외 번호 미적용 · S4.14 제외 번호를 추천 생성에도 적용 · 추천 개수 상한 200 · S4.10 자동 등록 제외 번호 · S5.11 평가 클릭 시 저장 목록 결과순 정렬 · S4.13 'seed 신규' 체크박스·무조건 생성 방지·중지 시 기존 seed 사용 · S4.13 폼 버튼 우측 정렬 · S4.13 SEED 완료 시 .env.local 기본값 갱신·추천 생성 자동 연계 · S4.13 SEED 값 생성·폼 레이아웃 압축(한 줄 체크박스·간격 최소화) · S5.5 추첨 개수 `.env`·입력 박스 · S5.10 안내 문구 배열 · S5.10 추첨 시도 ★ 상단 정렬·최근 6회차 출현 테두리 · S4.10·S4.12·S5.9 진행 예정 회차만 동작하는 방어 · S8.6-1 성과 추적 입력 영역 숨김 · S1.7 결과 입력 옆 과거 6회차 요약 · S1.6 등위별 총 당첨금·자동계산·영역 구분 · S1.6 설정/실행 결과 입력 재구성·1~5등 당첨정보 · S8.7 추천 정합성 분석 · S4.12·S5.9 현재 회차 초기화 · S5.8 저장된 번호 헤더 정렬·최근 당첨번호 · S7.1 docker compose 구동 · S4.11 추천 생성(순차) · S5.7 저장된 번호 회차 전환·필터 · 회차간 교차 공출현 S2.13 · `LOTTO_CROSS_DRAW_LAG` · 군 A/B/전체 재분석 1,241회 포함) |
 | 작성일 | 2026-09-08 |
 | 상태 | Draft → 구현 중 보완 (living document) |
 | 근거 문서 | `.docs/Perplexity-로또번호 무작위 추출 통계분석.md`, `.docs/lotto(~1240).xlsx` |
@@ -352,6 +352,7 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 | S2.11 다중검정 모듈 | Bonferroni/Holm/BH/BY 공통 함수, maxT 헬퍼 | P0 |
 | S2.12 당첨자수 모형 | 조합 특성 → 1등/2등 당첨자수 음이항 회귀, 계수·적합도 리포트 | P1 |
 | S2.13 회차간 교차 공출현 (v1.10, 사용자 요청) | 전회차 번호 $i$ → 후회차 번호 $j$ 의 45×45 방향 행렬 $M^{(\ell)}$, lag $\ell=1..L$ 개별 + 창 합산, 기대 $(T-\ell)(k/N)^2$·z·이항 p·BH/BY q·MC maxT(lag별·창·전 lag), 대각(재출현) 요약, 경계 회차는 간격 내 가능한 쌍만 포함, $L$ 은 `LOTTO_CROSS_DRAW_LAG`. 결과 섹션 `cross_draw`, 화면 '회차간 연관성' | P0 |
+| S2.14 중단된 분석 run 이어서 실행 (v1.33, 사용자 요청) | 분석 run 은 서버 프로세스의 백그라운드 스레드라 서버가 재기동되면(uvicorn `--reload` — `.env.local` 저장·SEED 값 생성 완료 포함 — 또는 컨테이너 재시작) **`실행 중` 상태에서 영원히 멈춰** 있었다. (a) **중단 감지**: 서버 시작 시 DB 에 `pending`/`running` 으로 남은 run 은 이 프로세스가 실행 중이 아니므로 새 상태 **`interrupted`(중단됨)** 로 바꾼다(stage 에 사유 기록). (b) **MC 체크포인트**: Monte-Carlo 단계는 약 30초마다 누적 통계량 배열·완료 반복수·RNG 상태를 `<LOTTO_CACHE_DIR>/runs/<run_id>.mc.npz` 에 원자적으로 저장한다(실행 메타 T·B·seed·chunk·L 이 다르면 무시하고 처음부터). 재개 시 체크포인트에서 RNG 상태를 복원해 **남은 반복만** 계산하므로 결과는 중단 없이 실행한 것과 **비트 단위로 동일**(seed 재현성 유지)하다. MC 이후 단계(빈도·쌍·그룹 등, 수 초)는 처음부터 다시 계산한다. 체크포인트는 run 완료·오류·삭제 시 지운다. (c) **자동 재개**: `LOTTO_AUTO_RESUME_RUNS=true`(기본)이면 서버 시작 직후 중단된 run 을 같은 `run_id` 로 백그라운드에서 이어서 실행한다(`false` 면 `interrupted` 로 두고 사용자 결정). (d) **수동 재개**: `POST /api/v1/analysis/runs/{run_id}/resume` — `interrupted` run 만 허용(실행 중 409, 완료/오류 409, 없으면 404). 설정 화면 '분석 실행' 표의 상태 '중단됨' 행에 **'이어서 실행'** 버튼을 둔다. 중단된 run 은 삭제 가능. 같은 DB 를 두 서버(honcho+docker)가 동시에 쓰는 구성은 지원하지 않는다(양쪽이 재개할 수 있음). 검증 replay·전략 개선 루프 실행은 범위 밖(잔여) | P0 |
 
 모든 결과는 §9 스키마로 저장되고 `analysis_run_id`로 조회된다.
 
@@ -400,7 +401,7 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
   - **레이아웃 압축**(v1.23, 사용자 요청) — 위 필드들을 **가로로 촘촘히**(flex-wrap, 항목 간 간격 최소화) 배치한다: 각 입력란은 값 크기에 맞춘 좁은 폭(추천 개수·티켓 간 최대 공유 번호는 특히 좁게)을 쓰고, 체크박스 라벨('균등 기준선 동시 생성', '저장 (성과 추적)')은 **줄바꿈되지 않는 한 줄**로 표시하며, 마지막 '추천 생성'/'추천 생성(순차)' 버튼 묶음 우측에 불필요한 여백을 남기지 않는다.
   - **버튼 우측 정렬**(v1.25, 사용자 요청) — '추천 생성'/'추천 생성(순차)' 버튼 묶음은 폼 행의 **우측 끝**에 맞춘다(`margin-left: auto`). 그 앞의 입력란·체크박스 묶음은 좌측에 촘촘히(v1.23) 유지해, 왼쪽은 입력, 오른쪽은 실행이라는 일관된 균형을 이룬다.
   - **제외 번호 미적용**(v1.30, 사용자 요청·명확화) — S4.10/S4.14 의 '제외 번호'는 'SEED 값 생성'에는 **적용되지 않는다**. SEED 탐색은 **직전 실제 회차의 실제 당첨 번호**를 무작위 조합으로 맞히는 것이 목적이라, 제외 번호를 강제하면 그 실제 당첨 번호 중 하나가 제외 목록에 있을 때 목표 등수를 영원히 달성할 수 없게 되어(예: 1등 목표인데 실제 1등 번호 중 하나가 제외됨) 탐색이 무의미해진다. 따라서 `POST /recommend/seed-search` 요청 스키마에는 `exclude_numbers` 필드 자체가 없으며, 화면의 'SEED 값 생성' 버튼도 제외 번호 선택과 무관하게 항상 전체 45개 번호 풀에서 탐색한다.
-  - **완료 시 기본 seed 갱신**(v1.24, 사용자 요청) — 탐색이 **일치(`status:"done"`)** 로 끝나면, 서버가 프로젝트 루트 `.env.local` 의 `LOTTO_RANDOM_SEED` 줄을 그 시행 횟수(=seed) 로 **즉시 갱신**해 다음 세션에도 같은 값이 기본 seed 로 쓰이게 한다(다른 줄·주석은 보존, 파일이 없으면 조용히 건너뜀 — `env_updated` 로 결과 노출). local 은 uvicorn 이 `.env.local` 을 감시해 저장 즉시 재기동되며(§v1.14.1), docker 는 `make docker-restart` 가 필요하다. `.env.local` 을 편집기에 열어 둔 상태면 저장 시 되돌아갈 수 있음에 주의. `.env`·`.env.local.example`(저장소 공유 기본값)은 수정하지 않는다.
+  - **완료 시 기본 seed 갱신**(v1.24, 사용자 요청) — 탐색이 **일치(`status:"done"`)** 로 끝나면, 서버가 프로젝트 루트 `.env.local` 의 `LOTTO_RANDOM_SEED` 줄을 그 시행 횟수(=seed) 로 **즉시 갱신**해 다음 세션에도 같은 값이 기본 seed 로 쓰이게 한다(다른 줄·주석은 보존, 파일이 없으면 조용히 건너뜀 — `env_updated` 로 결과 노출). local 은 uvicorn 이 `.env.local` 을 감시해 저장 즉시 재기동되며(§v1.14.1), docker 는 `make docker-restart` 가 필요하다. **(v1.32 버그 수정)** 이 갱신이 local(honcho) 에서 (a) uvicorn `--reload` 재기동으로 **인메모리 잡이 사라져 상태 조회가 404** 가 되고, (b) Vite dev 서버가 루트 `.env*` 변경을 감지해 재시작하며 **브라우저 전체 새로고침**(폼·예약된 자동 생성 상태 유실)을 일으켰다. 수정: 종료된 잡(done/stopped/error)은 `data/cache/seed_search/<job_id>.json` 스냅샷으로도 남기고 — done 은 **`.env.local` 갱신 전에** 기록 — 상태 조회·중지는 인메모리 잡이 없으면 스냅샷을 돌려준다(job_id 는 uuid 형식만 허용). Vite 는 `server.watch.ignored` 로 `.env`·`.env.*` 감시를 제외한다(프론트의 `VITE_TIMEZONE` 은 `/config` 가 덮어쓰고 `VITE_API_BASE` 는 기동 시 1회 로드라 감시 불필요 — 값을 바꾸면 프론트 재기동). 백엔드의 `.env.local` 즉시 재기동(v1.14.3)은 유지된다. `.env.local` 을 편집기에 열어 둔 상태면 저장 시 되돌아갈 수 있음에 주의. `.env`·`.env.local.example`(저장소 공유 기본값)은 수정하지 않는다.
   - **추천 생성과 자동 연계 — 'seed 신규' 체크박스**(v1.26, 사용자 요청으로 v1.24 동작 개정) — 'SEED 값 생성' 버튼 **옆에 'seed 신규' 체크박스**(기본 **해제**)를 둔다. '추천 생성'·'추천 생성(순차)' 클릭 시: (a) 이번 화면에서 SEED 탐색이 **이미 완료**돼 seed 가 채워져 있으면 **즉시** 추천을 생성한다(체크박스 무관). (b) 아직 완료 전일 때 — **'seed 신규'가 해제**돼 있으면(기본값) **탐색을 시작하지 않고 현재 seed 입력값(빈칸이면 `.env` 기본값)으로 즉시** 추천을 생성한다(= v1.24 의 "매번 무조건 새 SEED 탐색" 문제를 방지). **'seed 신규'를 체크**했을 때만 클릭 시 **현재 희망 등수**로 SEED 탐색을 (재)시작하고 완료를 기다렸다가 **완료되는 순간 그 seed 로 자동으로 추천을 생성**한다 — 진행 중에는 두 생성 버튼 모두 'SEED 대기 중…' 으로 비활성 표시되고, SEED 상태 줄에 자동 진행 안내를 덧붙인다. **대기 중 'SEED 생성 중지'를 누르면**(v1.26) 예약된 추천 생성을 취소하지 않고, **현재 seed 입력값(탐색 시작 전 값 — 빈칸이면 `.env` 기본값)을 그대로 사용해 추천을 생성**한다(상한 도달 자동 중지도 동일하게 처리; 탐색 자체가 서버 오류로 끝난 경우는 안전을 위해 기존과 같이 예약을 취소하고 추천을 생성하지 않는다). **주의**: 'seed 신규' 체크 + 희망 등수 1등(기본값)이면 평균 수 분(§S4.13 성능 벤치마크)이 걸릴 수 있다 — 짧게 끝내려면 희망 등수를 낮추거나 'SEED 값 생성'으로 미리 완료해 둔다.
 
 - S4.14 (v1.29, 사용자 요청) **제외 번호를 추천 생성에도 적용**: S4.10 의 '제외 번호' 그리드(1~45, 화면 상태 공유)는 '내 번호로 자동 등록'뿐 아니라 **'추천 생성'·'추천 생성(순차)'** 클릭 시에도 적용된다 — 선택된 번호가 **하나라도 포함된 조합은 생성하지 않는다**(거부 표본추출: 생성된 조합이 제외 번호를 포함하면 버리고 다시 뽑음, 기존 커버리지 제약과 같은 재시도 루프 재사용). 제외 번호가 많아 유효 조합을 찾기 어려우면 기존 커버리지 제약과 동일하게 일부만 생성되고 `warning` 으로 보고한다(오류로 중단하지 않음). API `POST /recommend`·`POST /recommend/sequential` 에 `exclude_numbers?`(1–45) 파라미터를 추가한다.
@@ -449,6 +450,7 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 - `.env.local` 로드(pydantic-settings). 변수는 §10.
 - 분석 프리셋: `quick`(B=10k), `report`(B=100k), `deep`(B=500k). **Q3 확정**: deep은 B=500,000을 기본값으로 정의하며 별도 실행 시간 목표를 두지 않는다(백그라운드 실행 + 진행률 표시로 대응).
 - S7.1 (v1.13, 사용자 요청) **Docker 구동(현재 환경)**: honcho 대신 `docker compose` 로 backend(api)·frontend(web) 를 컨테이너로 기동한다. `make docker-all`(빌드+기동) / `docker-build` / `docker-logs` / `docker-stop` / `docker-restart` / `docker-ps` / `docker-migrate`(alembic upgrade head) / `docker-seed`(xlsx 전체 적재) / `docker-reanalyze`. api 컨테이너는 시작 시 **`alembic upgrade head` 를 자동 실행**한 뒤 uvicorn 을 띄우고(`LOTTO_DOCKER_SEED=1` 이면 시드 적재도), 호스트 `./data`(SQLite·cache·backup)·`./.docs`(원천 xlsx, 읽기 전용)를 볼륨으로 공유해 honcho 실행과 같은 DB 를 쓴다. 컨테이너 안에서 프로젝트 루트는 `/srv/lotto`(backend WORKDIR `/srv/lotto/backend` → `PROJECT_ROOT` 규칙 유지). web 컨테이너는 Vite dev 서버(`--host 0.0.0.0`)로 `/api` 를 `http://api:8000` 에 프록시(`VITE_API_BASE`). 설정은 `.env.local` 을 `env_file` 로 주입하고 포트 매핑도 `LOTTO_BACKEND_PORT`/`LOTTO_FRONTEND_PORT` 를 따른다(honcho 와 동시 실행 시 포트 충돌 → `make docker-all` 이 사전 점검). 이미지는 `uv.lock`/`pnpm-lock.yaml` 고정 설치, `.dockerignore` 로 호스트 `.venv`/`node_modules` 제외. api 는 `/health` healthcheck, web 은 api healthy 후 기동.
+- S7.2 (v1.32, 사용자 요청) **환경별 docker compose 빌드·구동 — `make <env>-build`**, env = `local | dev | staging | prod`. `make <env>-build` 는 api/web 이미지를 빌드하고 그 환경 설정으로 컨테이너를 백그라운드 기동한다(`docker compose up -d --build`). `make <env>-all` 은 빌드 없이 기동(이미지가 없으면 compose 가 빌드), `<env>-logs`(SVC=api|web)·`<env>-stop`·`<env>-restart`·`<env>-ps` 는 같은 환경 컨테이너를 대상으로 한다(local 의 logs/stop/restart/ps 는 honcho 기준을 유지하고, 컨테이너는 `docker-*` 타겟을 쓴다 — 단 `make local-stop` 은 local 컨테이너도 함께 정리). 설정 파일은 `.env.<env>` — local 은 `.env.local`, dev/staging/prod 는 저장소에 포함된 `.env.<env>.example` 을 처음 실행 시 `.env.<env>` 로 복사(git 제외)한다. 환경 간 동시 구동을 위해 (a) compose 프로젝트 이름을 분리(local = 기본 `lotto-rec`, 그 외 `lotto-rec-<env>`), (b) 기본 포트를 분리(local 8000/5173, dev 18000/15173, staging 28000/25173, prod 38000/35173), (c) SQLite DB·캐시를 분리(`data/lotto-<env>.db`, `data/cache-<env>`)하고, 빈 DB 를 위해 dev/staging/prod 예시는 `LOTTO_DOCKER_SEED=1`(시작 시 원천 xlsx 멱등 적재)이다. 이미지는 S7.1 과 같다(web 은 Vite dev 서버 — 정적 빌드·nginx 서빙은 범위 밖, PRD §7 local 전용 원칙 유지). **local-build 의미 변경**: 기존 `make local-build`(호스트 의존성 설치 `uv sync`+`pnpm install`, `.env.local` 생성)는 **`make local-install`** 로 이름을 바꾸고, `make local-build` 는 local 환경 docker 빌드·구동(= `make docker-all`, honcho 포트 충돌 사전 점검 포함)이 된다.
 
 ### E8. 성과 추적 (P0) — Q2 확정
 
@@ -480,7 +482,7 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 
 | 항목 | 요구 |
 | :-- | :-- |
-| 운영 | local 전용. `make local-all`로 backend(8000)+frontend(5173) 동시 기동(honcho) 또는 `make docker-all`(docker compose, S7.1). 인증 없음, 외부 네트워크 불필요(이미지 빌드 시에만 패키지 다운로드) |
+| 운영 | local 전용. `make local-all`로 backend(8000)+frontend(5173) 동시 기동(honcho) 또는 `make docker-all`·`make local-build`(docker compose, S7.1) · 환경별 `make <env>-build`(dev/staging/prod — 같은 머신의 설정·포트·DB 분리 컨테이너, S7.2, 배포 아님). 인증 없음, 외부 네트워크 불필요(이미지 빌드 시에만 패키지 다운로드) |
 | 성능 | 1,240회 기준 단일·쌍·그룹 분석 < 2초(MC 제외). MC B=10k 쌍 maxT < 60초(벡터화, 배치). 장기 작업은 백그라운드 + 진행률 |
 | 재현성 | 모든 run에 데이터 해시·설정·seed·패키지 버전 저장. 동일 입력 → 동일 출력 |
 | 정확성 | 이론값 단위테스트(예: $p_{ij}=1/66$, $E[O_t]=0.8$, $\mu_i$, $J$ 계수), MC 검정의 균등 데이터 대상 type-I error ≈ α 확인 |
@@ -513,7 +515,7 @@ A(1~1,000회) 분석 → 전략 파라미터 → B(1,001회~) 검증 → 파라�
 | 프론트 | React 18 + TypeScript + Vite, TanStack Query, react-plotly.js, Tailwind CSS, shadcn/ui | Streamlit(단일 앱 요구와 불일치, 커스텀 UI 한계) |
 | 테스트 | pytest, hypothesis(속성 테스트), vitest, Playwright(P2) | — |
 | 품질 | ruff, mypy, ESLint, Prettier, pre-commit | — |
-| 실행 | Makefile(`make local-all/local-logs/local-stop/test/lint`, honcho Procfile.dev) 또는 `make docker-all/docker-logs/docker-stop/docker-migrate`(docker compose, api 시작 시 alembic 자동) | — |
+| 실행 | Makefile(`make local-all/local-logs/local-stop/test/lint`, honcho Procfile.dev) 또는 `make local-build`·`make <env>-build`(S7.2) / `make docker-all/docker-logs/docker-stop/docker-migrate`(docker compose, api 시작 시 alembic 자동) | — |
 
 ### 8.3 구조
 
@@ -612,6 +614,7 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | `LOTTO_AUTO_RERUN_PRESET` | 자동 재실행 프리셋 | `quick` | 신규 회차 삽입 후 자동 분석 프리셋 (`off`로 비활성) |
 | `LOTTO_TIMEZONE` | 표시 시간대 | `Asia/Seoul` | 모든 시각 표시(run·적재·대조·실험 생성 시각)는 이 IANA 시간대로. 백엔드는 UTC 저장·오프셋 포함 ISO 8601 반환, `/config` 로 노출 |
 | `LOTTO_RUN_RETENTION` | 분석 run 보존 개수 | 20 | 완료 시 오래된 run 자동 정리 (0=무제한, 군별 최신·활성 실험 참조 run 보존) |
+| `LOTTO_AUTO_RESUME_RUNS` | 중단된 분석 자동 재개 | true | 서버 시작 시 재기동으로 중단된(`interrupted`) 분석 run 을 MC 체크포인트부터 자동으로 이어서 실행(S2.14). `false` 면 설정 화면 '이어서 실행' 버튼으로 수동 재개 |
 | `LOTTO_PRIZE_RANK3_DEFAULT` / `_RANK4_` / `_RANK5_` | 3·4·5등 고정 당첨금 | 1,500,000 / 50,000 / 5,000 | 회차 데이터 부재 시 성과 추적용 가정값 (Q4) |
 | `LOTTO_RANDOM_SEED` | 난수 시드 | 20260908 | 재현성 |
 | `LOTTO_MIN_EFFECT_DELTA` | 최소 효과크기 | 0.25 | 네트워크 엣지 $\lvert\mathrm{Lift}^*-1\rvert\ge\delta$ |
@@ -636,7 +639,8 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | GET | `/api/v1/data/imports` | 적재 이력 |
 | GET | `/api/v1/data/summary` | 회차 범위, 군 분할, 정합성 결과 |
 | POST | `/api/v1/analysis/runs` | {cohort, preset, alpha, correction, seed} → run_id (백그라운드) |
-| GET | `/api/v1/analysis/runs/{run_id}` | 상태·진행률·메타 |
+| GET | `/api/v1/analysis/runs/{run_id}` | 상태·진행률·메타 (status: pending·running·done·error·interrupted) |
+| POST | `/api/v1/analysis/runs/{run_id}/resume` | (S2.14) 서버 재기동으로 중단된(`interrupted`) run 이어서 실행 — MC 체크포인트부터 |
 | GET | `/api/v1/analysis/runs/{run_id}/frequency` | 단일 번호 결과 |
 | GET | `/api/v1/analysis/runs/{run_id}/global` | 전역 검정($J$, $Q$, Genest, MC) |
 | GET | `/api/v1/analysis/runs/{run_id}/pairs` | 쌍 결과(필터: correction, alpha, min_lift) |
@@ -710,7 +714,7 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 | §12.2 균등 시뮬 기각률 ≈ α / 편향 검정력 리포트 | ✅ | test_engine (naive χ² 과소기각·J≈α), test_run_diff_retention_power (impl/8th) |
 | §12.3 군 A 적재·분석·KPI / 990쌍·네트워크 / 검증 8전략 / 추천 N=env / 내 번호 <1s / 재현성 / 증분·충돌·성과추적 GWT | ✅ | impl/1st~4th, 라이브 스크린샷 |
 | COMPLIANCE testing_additions — OpenAPI 계약 테스트 | ✅ | test_openapi_contract (impl/13th, 경로 스냅샷) |
-| §7 Playwright 스모크 (P2) | ⏸ 잔여 | 브라우저 바이너리 다운로드가 `make local-build` 범위 밖. 대체: browse 스킬 라이브 스크린샷(impl/4th·9th~11th) |
+| §7 Playwright 스모크 (P2) | ⏸ 잔여 | 브라우저 바이너리 다운로드가 `make local-install` 범위 밖. 대체: browse 스킬 라이브 스크린샷(impl/4th·9th~11th) |
 | §7 pytest 커버리지 ≥80%(엔진) | ⏸ 미측정 | `uv run pytest --cov=app` 로 측정 가능, 게이트 미포함 |
 
 ### 12.4 테스트 산출물 저장
@@ -800,6 +804,8 @@ frontend ◄── REST/JSON (TanStack Query) ── FastAPI
 
 | 버전 | 일자 | 내용 |
 | :-- | :-- | :-- |
+| 1.33 | 2026-10-04 | 사용자 보고: 서버 재기동 후 분석 run 이 '실행 중'(예: 25% monte_carlo 40%)에서 멈춤 — 중단 감지(`interrupted`), MC 체크포인트(약 30초, 비트 동일 재개), 시작 시 자동 재개(`LOTTO_AUTO_RESUME_RUNS`, 기본 true), `POST /analysis/runs/{id}/resume`·'이어서 실행' 버튼 (S2.14) |
+| 1.32 | 2026-10-04 | (1) 버그 수정(사용자 보고): 추천 'SEED 값 생성' 중 처리 완료 전 화면이 불규칙하게 새로고침되며 생성이 실패 — done 시 `.env.local` 갱신(v1.24)이 uvicorn `--reload`(인메모리 잡 유실 → 상태 404)와 Vite dev 서버 재시작(브라우저 전체 새로고침)을 유발. 종료 잡 스냅샷(`data/cache/seed_search/`, `.env.local` 갱신 전 기록)으로 상태 조회 보존 + Vite `.env*` 감시 제외 (S4.13); (2) 사용자 요청: `make <env>-build`(local/dev/staging/prod) 로 환경별 docker compose 빌드·구동, `.env.<env>.example`·프로젝트/포트/DB 분리, 기존 `local-build`(호스트 의존성 설치) → `local-install` (S7.2) |
 | 1.31.1 | 2026-09-28 | 버그 수정(사용자 보고): '자동' 을 다시 눌러도 같은 번호만 선택됨 — seed 미지정 시 고정 `LOTTO_RANDOM_SEED` 를 써서 매번 같은 추출. 미지정이면 호출마다 새 무작위 seed(응답 `seed` 로 재현 가능, S4.10 자동 등록과 동일 규칙) (S4.15) |
 | 1.31 | 2026-09-28 | 사용자 요청: '제외 번호' 타이틀 우측 **'자동'** 버튼 — 최근 `LOTTO_EXCLUDE_TREND_DRAWS`(기본 30)회 동향에서 최다·최소 추첨 번호 각 회차수//3 개(기본 10+10)를 뽑고, 직전 `LOTTO_EXCLUDE_RECENT_DRAWS`(기본 5)회 출현 번호와의 교집합에서 무작위로 제외 번호를 채움(교체, `POST /recommend/exclude-suggestion`, S4.15). 부수: 제외 번호 안내 문구 글씨를 전략 설명 문구와 같은 스타일(`text-xs text-neutral-500`)로 축소 |
 | 1.30 | 2026-09-27 | 사용자 요청(명확화): 'SEED 값 생성'은 직전 실제 회차의 실제 당첨 번호를 맞히는 탐색이므로 제외 번호(S4.10/S4.14)를 적용하지 않음을 명시(`POST /recommend/seed-search` 는 `exclude_numbers` 미지원) (S4.13) |

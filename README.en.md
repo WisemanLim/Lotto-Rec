@@ -27,13 +27,13 @@ statistics-based **ticket evaluation, automated recommendations, and outcome tra
 
 ## Prerequisites
 
-Python 3.12+, [uv](https://docs.astral.sh/uv/), Node 22+, pnpm 9, GNU Make. Docker optional (unused locally).
+Python 3.12+, [uv](https://docs.astral.sh/uv/), Node 22+, pnpm 9, GNU Make. Docker optional (not needed for honcho; required only for `make local-build` / `make <env>-build` containers).
 
 ## Quick Start
 
 ```bash
 make preflight
-make local-build     # uv sync + pnpm install, creates .env.local from the example
+make local-install   # uv sync + pnpm install, creates .env.local from the example  (renamed from local-build in v1.32)
 make db-migrate      # creates data/lotto.db
 make db-seed         # loads draws 1–1,000 (cohort A) from .docs/lotto(~1240).xlsx
 make local-all       # backend http://127.0.0.1:8000/docs · frontend http://127.0.0.1:5173
@@ -46,12 +46,32 @@ Run with Docker instead of honcho (current env, S7.1 — same `./data` DB):
 
 ```bash
 make local-stop                  # if honcho holds 8000/5173 (or use other ports, below)
-make docker-all                  # build + start api/web; api runs alembic upgrade head on start
+make local-build                 # = make docker-all: build + start api/web; api runs alembic upgrade head on start
 LOTTO_DOCKER_SEED=1 make docker-all   # empty DB → also import the full xlsx
 make docker-logs SVC=api         # [entrypoint] alembic upgrade head → uvicorn
 make docker-ps / docker-stop     # status / tear down (host ./data kept)
 LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all   # side by side with honcho
 ```
+
+Per-environment docker compose (S7.2 — `make <env>-build`, env = local · dev · staging · prod):
+
+```bash
+make dev-build        # copies .env.dev.example → .env.dev if missing, builds images, starts (api :18000 · web :15173)
+make staging-build    # api :28000 · web :25173
+make prod-build       # api :38000 · web :35173
+make prod-ps / prod-logs SVC=api / prod-restart / prod-stop
+make prod-all         # start without rebuilding (builds if images are missing)
+make db-migrate ENV=prod   # host alembic against the .env.prod DB (data/lotto-prod.db)
+```
+
+| Env | Settings file | compose project | api / web ports | SQLite · cache | Seed |
+|---|---|---|---|---|---|
+| local | `.env.local` | `lotto-rec` (shared with docker-*) | 8000 / 5173 | `data/lotto.db` · `data/cache` | when `LOTTO_DOCKER_SEED=1` |
+| dev | `.env.dev` ← `.env.dev.example` | `lotto-rec-dev` | 18000 / 15173 | `data/lotto-dev.db` · `data/cache-dev` | 1 by default (idempotent) |
+| staging | `.env.staging` ← `.env.staging.example` | `lotto-rec-staging` | 28000 / 25173 | `data/lotto-staging.db` · `data/cache-staging` | 1 |
+| prod | `.env.prod` ← `.env.prod.example` | `lotto-rec-prod` | 38000 / 35173 | `data/lotto-prod.db` · `data/cache-prod` | 1 |
+
+Projects, ports and DBs are separate, so several environments can run at once. In every environment the web image is the Vite dev server (no static build serving — PRD §7 local-only principle).
 
 First-use flow: Settings → **run analysis (cohort A, quick)** → Validation → **run validation (replay 1,001–1,240)** → Recommend / My numbers / Tracking.
 Validation inserts the real cohort-B draws into the DB (labelled B), so the DB then holds 1,240 draws.
@@ -61,19 +81,20 @@ Validation inserts the real cohort-B draws into the DB (labelled B), so the DB t
 | Target | Description |
 |---|---|
 | `make preflight` | Check runtimes/tools (Docker → WARN only) |
-| `make local-build` | Install dependencies |
+| `make local-install` | Install host dependencies (uv sync + pnpm install) and create `.env.local` (was `local-build` up to v1.31) |
+| `make local-build` | **[local·docker]** build api/web images and start containers (= `make docker-all`, S7.2). `make local-stop` also removes these containers |
 | `make local-all` / `local-logs` / `local-stop` / `local-restart` / `local-ps` | Start/tail/stop/restart/status of backend+frontend (honcho in background; `PROC_MGR=pm2`; `LOCAL_INFRA=` for optional docker infra) |
 | `make test` / `make lint` | pytest + vitest / ruff + mypy + eslint + tsc |
 | `make db-migrate` / `db-seed` / `db-reset` / `db-fresh` | Alembic / incremental xlsx import of cohort A (`python -m app.seed [--all|--max-draw N]`) / recreate SQLite / reset+seed |
 | `make reanalyze [PRESET=quick|report|deep] [COHORTS=A,B,ALL]` | **Back up the DB file (`data/backup/lotto_<UTC>.db`) and re-run analysis for cohorts A, B, ALL** (`python -m app.reanalyze`, trigger=reanalyze). Old runs are kept and pruned by `LOTTO_RUN_RETENTION` |
 | `make docker-all` / `docker-build` / `docker-logs` / `docker-stop` / `docker-restart` / `docker-ps` | **[docker, current env]** build & start backend (api) + frontend (web) containers in the background / build / logs (`SVC=api\|web`) / tear down / restart / status. Uses `.env.local` as env_file and for port mapping, shares `./data` (SQLite, cache, backups) and `./.docs` as volumes. **api runs `alembic upgrade head` on start** before uvicorn; `LOTTO_DOCKER_SEED=1 make docker-all` also imports the full xlsx. web is the Vite dev server proxying `/api` to `api:8000`. If honcho already holds the ports the target stops with a hint (`make local-stop`, or `LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all`) |
 | `make docker-migrate` / `docker-seed` / `docker-reanalyze` | [docker] migration only / full xlsx import (idempotent) / backup + re-analysis (`PRESET`, `COHORTS`) |
-| `make <env>-*` | dev/staging/prod container targets — kept for standard compatibility, unused |
+| `make <env>-build` / `<env>-all` / `<env>-logs` / `<env>-stop` / `<env>-restart` / `<env>-ps` | **[docker, env = dev\|staging\|prod]** build+start / start / logs (`SVC=api\|web`) / tear down / restart / status (S7.2). Copies `.env.<env>.example` when `.env.<env>` is missing; project `lotto-rec-<env>` |
 
 ## Environment (`.env.local`)
 
 Variable names are literal English translations of the Korean terms with a `LOTTO_` prefix. Full list: `.env.local.example`, PRD §10.
-Precedence (low → high): `.env.local.example` (defaults) → `.env` → `.env.local` (your values) → OS environment. After changing a value run `make local-restart` (uvicorn reload does not watch env files).
+Precedence (low → high): `.env.local.example` (defaults) → `.env` → `.env.local` (your values) → OS environment. With honcho, uvicorn watches the root `.env` / `.env.local` and restarts the backend on save (v1.14.3). Since v1.32 Vite no longer watches `.env*`, so run `make local-restart` after changing `VITE_*` values. Docker: `make docker-restart` / `make <env>-restart`.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -84,6 +105,7 @@ Precedence (low → high): `.env.local.example` (defaults) → `.env` → `.env.
 | `LOTTO_SIGNIFICANCE_LEVEL` / `LOTTO_DEFAULT_CORRECTION` | 0.05 / fdr_bh | α / default correction |
 | `LOTTO_RANDOM_SEED` | 20260908 | Reproducibility seed |
 | `LOTTO_AUTO_RERUN_PRESET` | quick | Auto re-analysis after new draws (`off` to disable) |
+| `LOTTO_AUTO_RESUME_RUNS` | true | On startup, resume analysis runs interrupted by a server restart (uvicorn reload / container restart) from the MC checkpoint (S2.14). `false` → manual "이어서 실행" (Resume) button in Settings. `/config` `lotto_auto_resume_runs` |
 | `LOTTO_RUN_RETENTION` | 20 | Analysis runs to keep (0 = unlimited); latest per cohort and runs referenced by active experiments are protected |
 | `LOTTO_CROSS_DRAW_LAG` | 5 | **Cross-draw gap L** (1–50) for the previous→next draw co-occurrence analysis: lags 1..L individually plus the summed window; edge draws (first/last L) contribute only the pairs that exist inside the gap. After changing: `make local-restart`, then a new run (or `make reanalyze`). Current value visible in `GET /config` / Settings; the cross-draw page warns when the run's L differs |
 | `LOTTO_RECENT_DRAWS` | 5 | Number of **recent winning-number draws** shown next to the My Numbers 'saved numbers' title (1–20, S5.8). Exposed as `/config` `lotto_recent_draws`. Local: **applied on save** (uvicorn watches `.env.local`); docker: `make docker-restart` |
@@ -101,7 +123,7 @@ Precedence (low → high): `.env.local.example` (defaults) → `.env` → `.env.
 |---|---|
 | Config | `GET /api/v1/config` |
 | Data | `POST /data/import` (xlsx/csv incremental, `?overwrite`) · `POST /data/draws` (optional per-rank `prizeN` = prize per game and `winnersN` = winning games for ranks 1–5; S1.6) · `GET /data/draws[/{n}]` · `GET /data/summary` · `GET /data/imports` |
-| Analysis | `POST /analysis/runs` · `GET /analysis/runs[/latest|/{id}]` · `GET /analysis/runs/{id}/{section}` (summary, frequency, frequency_bonus, global, pairs, network, itemsets, groups, temporal, **cross_draw**, winners_model, null_summary, diff_vs_previous) · `DELETE /analysis/runs/{id}` · `POST /analysis/itemsets/query` |
+| Analysis | `POST /analysis/runs` · `GET /analysis/runs[/latest|/{id}]` · `GET /analysis/runs/{id}/{section}` (summary, frequency, frequency_bonus, global, pairs, network, itemsets, groups, temporal, **cross_draw**, winners_model, null_summary, diff_vs_previous) · `DELETE /analysis/runs/{id}` · `POST /analysis/runs/{id}/resume` (S2.14 — resume an `interrupted` run, otherwise 409) · `POST /analysis/itemsets/query` |
 | Validation | `POST /validation/runs` · `GET /validation/runs[/latest|/{id}]` · `GET /validation/runs/{id}/{kind}` (meta, backtest, scoring, replication, homogeneity) |
 | Recommend | `GET /recommend/strategies` · `POST /recommend` (→ sets[].params_used/experiment, analysis_basis, tickets[].`past_wins` = past 1st/2nd-prize draws matching the ticket, S4.9) · `GET /recommend/history?origin=user|backtest|all&…` (each row carries `past_wins`) · `GET /recommend/history/summary?origin=` · `POST /recommend/sequential` {strategies?, count?, seed?, max_shared?, save} → **run every strategy in catalog order** (one batch per strategy, no extra uniform control, failing strategies reported in `failed` and skipped; S4.11) · `DELETE /recommend/history[?target_draw_no=]` → **reset recommendations** (deletes user-origin recommendations of the upcoming draw = latest+1; 400 for draws whose result is entered; S4.12) · `POST /recommend/auto-register` {target_draw_no?, seed?} → draw 5 of 1..P at random, repeated target-draw-number times → top-5 positions by frequency → register each strategy's latest-batch tickets at those positions as my numbers (same numbers + target draw are ★ merged → `merged_duplicates`/`total_merged`, S4.10·S5.6). Passing `exclude_numbers?` (1-45) skips any (strategy, position) combo whose ticket contains one of them, reported as `excluded_positions` (no substitute drawn; v1.28). The same exclusion selection (shared page-wide) also applies to `POST /recommend` and `POST /recommend/sequential` via `exclude_numbers?`, rejecting any generated combination that contains one (rejection sampling; v1.29). Recommendation count now caps at 200 (`count?`) · `POST /recommend/exclude-suggestion` {trend_draws?, recent_draws?, seed?} → **exclusion-numbers 'Auto'**: most/least-drawn numbers of the last N draws (N//3 each) ∩ numbers drawn in the previous M draws, then up to M picked at random → {selected, hot_candidates, cold_candidates, recent_numbers, intersection, seed, note}. Without `seed` every call uses a fresh random seed (nothing persisted; the on-screen 'Auto' button replaces the current selection, S4.15) · `POST /recommend/seed-search` {target_draw_no?, target_rank?} → **generate SEED** (random search matched against the previous actual draw's 1st-prize numbers, background/not persisted) → {job_id, status, iterations, seed, matched_strategy, matched_ticket, max_iterations} · `GET /recommend/seed-search/{job_id}` (poll progress) · `POST /recommend/seed-search/{job_id}/stop` · **on a match (`status:"done"`), `.env.local`'s `LOTTO_RANDOM_SEED` is updated to that seed automatically** (`env_updated`) so it stays the default going forward · 'Generate recommendation'/'Generate recommendation (sequential)' run immediately with the current seed value if already completed or if the **'seed new' checkbox** (right of the SEED button, unchecked by default) is unchecked; only when checked and not yet completed does it (re)start the search and auto-generate the moment it finishes — stopping a queued search then proceeds with the pre-search seed value instead of cancelling (S4.13) |
 | Experiments (improvement loop) | `GET /experiments/strategy-params` · `POST /experiments/runs` · `GET /experiments/runs[?strategy]` · `GET /experiments/runs/{id}` · `GET /experiments/lineage?strategy=` · `GET /experiments/active` · `POST /experiments/runs/{id}/activate` · `POST /experiments/deactivate` · `DELETE /experiments/runs/{id}` |
@@ -146,6 +168,8 @@ Joe-adjusted χ² (J = (N−1)/(N−k)·X²), Coronel-Brizio order-statistic Q t
 | impl/18th | S5.6 My Numbers **★ duplicate ×n badge** — same numbers + same target draw merge into one row (`user_ticket.dup_count/dup_labels`, Alembic 5b12a3e1), same numbers on another draw are linked via `same_number_ticket_ids`, auto-register skip→merge, glossary term `duplicate_ticket` (repeated generation ≠ evidence of significance) | PASS 8/8 (pytest 63, vitest 35) |
 | impl/19th | Bug fix — white screen when evaluating My Numbers with a bonus (scorecard `bonus` dict → int, `bonus_info` split out, defensive ScorecardView render) | PASS 4/4 (pytest 63, vitest 37) |
 | impl/20th | Bug fix — `.env.local` values ignored (pydantic-settings gives the later `env_file` precedence, so the example file overrode user values; reordered to example → `.env` → `.env.local`, precedence regression test) | PASS 6/6 (pytest 65, vitest 37) |
+| impl/51st | v1.33 **Resume interrupted analysis runs** (S2.14) — on startup orphaned `pending/running` runs → `interrupted`; MC stage checkpoints about every 30 s (`data/cache/runs/<run_id>.mc.npz`, incl. RNG state → bit-identical results); auto-resume on startup (`LOTTO_AUTO_RESUME_RUNS`); `POST /analysis/runs/{id}/resume` + "Resume" button in Settings | PASS 9/9 (pytest 137, vitest 96; the stuck run in the real DB auto-resumed; api restart continued 21% → 20% from the checkpoint) |
+| impl/50th | v1.32 **Bug fix: page refresh / failed generation during "Generate SEED"** — on a match the `.env.local` write triggered a uvicorn reload (in-memory job lost → 404) and a Vite restart (full browser reload). Finished-job snapshot (`data/cache/seed_search/`, written before the env write) + Vite stops watching `.env*` + **per-environment docker compose `make <env>-build`** (S7.2, `local-build` → `local-install`) | PASS 11/11 (pytest 130, vitest 95, dev/prod/local containers up + smoke) |
 | impl/49th | v1.31 **exclusion-numbers 'Auto'** (S4.15) — button right of the 'Exclude numbers' title: most/least-drawn of the last `LOTTO_EXCLUDE_TREND_DRAWS` draws (//3 each) ∩ numbers of the previous `LOTTO_EXCLUDE_RECENT_DRAWS` draws, random pick replaces the selection (`POST /recommend/exclude-suggestion`); notice text shrunk to the strategy-description style. v1.31.1: fixed same result on every click (fixed seed). Also added the missing `exclude_numbers` to the `RecommendIn`/`SequentialIn` TS types | PASS 8/8 (pytest 127, vitest 95) |
 | impl/48th | v1.30 **SEED generation never applies exclusion numbers** made explicit (structural guarantee test added) + `scripts/recommend-flow.sh` (exclude-numbers → generate-SEED → generate-recommendations(sequential) curl scenarios) | PASS 6/6 (pytest 121) |
 | impl/47th | v1.29 **exclusion numbers now apply to generation too + count cap raised to 200** — the exclusion grid moved beside the '군 A 분석 가중' strategy card so it's shared by 'Generate', 'Generate (sequential)' and 'register as my numbers' (rejection sampling); recommendation count cap 50 → 200 | PASS 8/8 (pytest 119, vitest 94) |
@@ -196,6 +220,7 @@ Lotto-Rec/
 | `./.env.local: syntax error near unexpected token '('` | Quote the `LOTTO_SOURCE_FILE` value |
 | `make db-seed` inserts 0 rows | Already loaded (idempotent). Load cohort B too with `python -m app.seed --all` |
 | Run stays `running` for long | deep preset (500k) takes 15+ min; poll `GET /analysis/runs/{id}` |
+| **Analysis run frozen at "running" after a server restart** (≤ v1.32) | The worker thread died with the server process. Since v1.33 such runs are marked `interrupted` on startup and resumed automatically (MC from the last checkpoint, at most ~30 s recomputed). With `LOTTO_AUTO_RESUME_RUNS=false` use the "Resume" button in Settings. Do not run honcho and docker on the same `./data` DB at once (both would resume) |
 | Recommendation says `fallback: winners_model 없음` | No completed cohort-A run yet — run an analysis first |
 | Tailwind config change (e.g. darkMode) not reflected | Vite dev server loads tailwind.config at start → `make local-restart` |
 | History shows few rows even with "all" page size | Default origin = user-generated (saved) tickets only. Switch the origin filter to "validation replay" or "all" to see simulation tickets |
@@ -203,6 +228,9 @@ Lotto-Rec/
 | Only one number's diagonal (repeat) cell looks large on the cross-draw page | That number is simply frequent overall. The displayed/tested z is the margin-**conditioned** independence z, which is not inflated (the unconditional expectation is shown as reference column `expected`) |
 | "My numbers" list looks empty after entering a draw result | By design (S5.7): the list switches to the next draw the moment a next-draw recommendation is saved (or a next-draw ticket registered). Older tickets are not deleted — pick that draw or "all draws" in the target-draw filter |
 | (?) tooltip text in a table header runs off the box on one line | `DataTable` th/td `whitespace-nowrap` is inherited by the tooltip. v1.10.1 forces `whitespace-normal break-words` and `max-w-[calc(100vw-2rem)]` on the `Term` tooltip — it wraps and grows vertically |
+| **Recommend "Generate SEED": page suddenly refreshes before completion and generation fails** (≤ v1.31, local honcho) | On a match the server rewrites `LOTTO_RANDOM_SEED` in `.env.local` → uvicorn `--reload` restarts (in-memory job gone, status 404) and Vite logs `../.env.local changed, restarting server`, reloading the browser. v1.32 keeps a finished-job snapshot (`data/cache/seed_search/<job_id>.json`) so status survives the restart, and Vite no longer watches `.env*` |
+| `make dev-build` etc. fail with `Cannot connect to the Docker daemon` | Docker Desktop not running — `open -a Docker`, then retry |
+| Port conflict on `make <env>-build` | Change `LOTTO_BACKEND_PORT` / `LOTTO_FRONTEND_PORT` in `.env.<env>` (defaults 18000/28000/38000 · 15173/25173/35173) |
 | `make docker-all` stops with "honcho 가 실행 중" | Port-conflict guard (8000/5173). Run `make local-stop` first, or `LOTTO_BACKEND_PORT=18000 LOTTO_FRONTEND_PORT=15173 make docker-all` |
 | api container ignores `.env.local` / path errors | compose injects `.env.local` as env_file (quoted values handled). Container root is `/srv/lotto` (`./data/lotto.db` → `/srv/lotto/data/lotto.db`). After edits: `make docker-restart SVC=api` |
 | web container cannot reach the API | web is the Vite dev server proxying `/api` to `VITE_API_BASE=http://api:8000`; it starts only after api is healthy. Check `make docker-logs SVC=api` |

@@ -156,18 +156,18 @@ def seed_search_start(body: SeedSearchIn, session: Session = Depends(get_session
 
 @router.get("/seed-search/{job_id}")
 def seed_search_status(job_id: str) -> dict:
-    job = ssvc.get_job(job_id)
-    if job is None:
+    status = ssvc.get_status(job_id)
+    if status is None:
         raise HTTPException(404, "탐색 작업을 찾을 수 없습니다(만료되었거나 서버가 재시작됨)")
-    return job.to_dict()
+    return status
 
 
 @router.post("/seed-search/{job_id}/stop")
 def seed_search_stop(job_id: str) -> dict:
-    job = ssvc.stop_job(job_id)
-    if job is None:
+    status = ssvc.stop_job(job_id)
+    if status is None:
         raise HTTPException(404, "탐색 작업을 찾을 수 없습니다(만료되었거나 서버가 재시작됨)")
-    return job.to_dict()
+    return status
 
 
 @router.delete("/history")

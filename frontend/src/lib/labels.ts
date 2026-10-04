@@ -16,7 +16,7 @@ export const NAV = [
   { to: '/glossary', label: '용어 사전' },
 ];
 
-export const STATUS_LABEL: Record<string, string> = { pending: '대기', running: '실행 중', done: '완료', error: '오류' };
+export const STATUS_LABEL: Record<string, string> = { pending: '대기', running: '실행 중', done: '완료', error: '오류', interrupted: '중단됨' };
 
 export const STRATEGY_LABEL: Record<string, string> = {
   uniform: '균등 무작위 (기준선)',

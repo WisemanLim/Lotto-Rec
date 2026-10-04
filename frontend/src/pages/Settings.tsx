@@ -24,6 +24,7 @@ const CONFIG_HELP: Record<string, string> = {
   lotto_cross_draw_lag: '회차간 교차 공출현 전/후 간격 L (LOTTO_CROSS_DRAW_LAG, 1–50) — run 생성 시 고정, 변경 후 재분석 필요',
   lotto_min_effect_delta: '네트워크 엣지 최소 효과크기 |Lift*−1| (LOTTO_MIN_EFFECT_DELTA)',
   lotto_run_retention: '분석 run 보존 개수, 0=무제한 (LOTTO_RUN_RETENTION)',
+  lotto_auto_resume_runs: "서버 재기동으로 중단된 분석 run 을 시작 시 자동으로 이어서 실행 (LOTTO_AUTO_RESUME_RUNS) — false 면 '이어서 실행' 버튼",
   lotto_recent_draws: "내 번호 '저장된 번호' 타이틀 우측 최근 당첨번호 회차 수 (LOTTO_RECENT_DRAWS, 1–20)",
   lotto_exclude_trend_draws: "제외 번호 '자동' 동향 분석 대상 최근 회차 수 (LOTTO_EXCLUDE_TREND_DRAWS, 3–200)",
   lotto_exclude_recent_draws: "제외 번호 '자동' 직전 N회 교집합 필터·무작위 추출 개수 상한 (LOTTO_EXCLUDE_RECENT_DRAWS, 1–50)",
@@ -118,6 +119,11 @@ export default function Settings() {
     mutationFn: (id: string) => api.analysis.remove(id),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['analysis'] }),
   });
+  // S2.14 서버 재기동으로 중단된 run 이어서 실행
+  const resume = useMutation({
+    mutationFn: (id: string) => api.analysis.resume(id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['analysis'] }),
+  });
 
   const runCols: Column<RunMeta>[] = [
     { key: 'created_at', label: '생성', render: (r) => fmtDate(r.created_at) },
@@ -140,6 +146,11 @@ export default function Settings() {
               <span className="text-xs text-neutral-500">{r.stage}</span>
             </>
           )}
+          {r.status === 'interrupted' && (
+            <span className="text-xs text-amber-700 dark:text-amber-300" title={r.stage ?? undefined}>
+              {Math.round(r.progress * 100)}% 에서 멈춤
+            </span>
+          )}
           {r.error && <span className="text-xs text-red-600">{r.error}</span>}
         </span>
       ),
@@ -160,6 +171,17 @@ export default function Settings() {
           {r.status === 'done' && (
             <button type="button" className="text-xs underline" onClick={() => setRunId(r.run_id)}>
               선택
+            </button>
+          )}
+          {r.status === 'interrupted' && (
+            <button
+              type="button"
+              className={`${btnCls} !px-2 !py-0.5 text-xs`}
+              disabled={resume.isPending}
+              title="서버 재기동으로 중단된 분석을 같은 run 으로 이어서 실행합니다(Monte-Carlo 는 마지막 체크포인트부터, 결과는 중단 없이 실행한 것과 동일)"
+              onClick={() => resume.mutate(r.run_id)}
+            >
+              이어서 실행
             </button>
           )}
           <button type="button" className={btnDangerCls} disabled={remove.isPending || isActive(r.status)} onClick={() => confirm('이 run 을 삭제할까요?') && remove.mutate(r.run_id)}>
@@ -247,6 +269,7 @@ export default function Settings() {
           <DataTable columns={runCols} rows={runs} rowKey={(r) => r.run_id} pageSize={15} dense initialSort={{ key: 'created_at', dir: 'desc' }} />
         </div>
         {remove.isError && <ErrorBox error={remove.error} />}
+        {resume.isError && <ErrorBox error={resume.error} />}
       </Section>
       <Section title="검증 실행 이력">
         {vruns.isLoading && <Loading />}

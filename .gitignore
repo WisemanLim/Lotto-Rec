@@ -142,9 +142,13 @@ test-results/
 # ===== project (Lotto-Rec) =====
 .env.local
 !.env.local.example
+!.env.dev.example
+!.env.staging.example
+!.env.prod.example
 data/*.db
 data/*.db-journal
 data/cache/*
+data/cache-*/
 data/backup/
 .make/
 test/**/logs/*

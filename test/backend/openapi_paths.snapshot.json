@@ -36,6 +36,7 @@
  "GET /health",
  "POST /api/v1/analysis/itemsets/query",
  "POST /api/v1/analysis/runs",
+ "POST /api/v1/analysis/runs/{run_id}/resume",
  "POST /api/v1/data/draws",
  "POST /api/v1/data/import",
  "POST /api/v1/experiments/deactivate",

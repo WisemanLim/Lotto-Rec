@@ -116,6 +116,7 @@ def test_core_response_shapes(seeded: None, client) -> None:  # noqa: ANN001
         ("lotto_min_effect_delta", float),
         ("lotto_recent_draws", int),
         ("lotto_run_retention", int),
+        ("lotto_auto_resume_runs", bool),
         ("timezone", str),
     ):
         assert isinstance(cfg[k], t), (k, cfg[k])

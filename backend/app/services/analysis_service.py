@@ -1,4 +1,8 @@
-"""분석 run 관리 — 파이프라인 실행(백그라운드 스레드), 진행률, 섹션별 결과 저장, 자동 재실행 훅."""
+"""분석 run 관리 — 파이프라인 실행(백그라운드 스레드), 진행률, 섹션별 결과 저장, 자동 재실행 훅.
+
+(S2.14) 서버 재기동으로 스레드가 사라진 run 은 시작 시 `interrupted` 로 표시하고, MC 체크포인트
+(`<cache>/runs/<run_id>.mc.npz`)부터 같은 run_id 로 이어서 실행한다(자동 또는 `resume_run`).
+"""
 
 from __future__ import annotations
 
@@ -44,6 +48,8 @@ SECTIONS = [
 
 _lock = threading.Lock()
 _active: dict[str, threading.Thread] = {}
+CHECKPOINT_DIR: Path | None = None  # None → settings.cache_dir_path / "runs" (테스트는 임시 경로로 치환)
+INTERRUPTED_STAGE = "서버 재기동으로 중단됨 — 이어서 실행 가능"
 _null_feature_cache: dict[int, np.ndarray] = {}
 
 
@@ -127,11 +133,63 @@ def create_run(
     return run
 
 
+def checkpoint_path(run_id: str) -> Path:
+    base = CHECKPOINT_DIR if CHECKPOINT_DIR is not None else settings.cache_dir_path / "runs"
+    return base / f"{run_id}.mc.npz"
+
+
+def discard_checkpoint(run_id: str) -> None:
+    checkpoint_path(run_id).unlink(missing_ok=True)
+
+
 def start_run_background(run_id: str) -> None:
     th = threading.Thread(target=execute_run, args=(run_id,), daemon=True, name=f"run-{run_id[:8]}")
     with _lock:
         _active[run_id] = th
     th.start()
+
+
+def is_active(run_id: str) -> bool:
+    with _lock:
+        th = _active.get(run_id)
+    return th is not None and th.is_alive()
+
+
+def mark_interrupted_runs(session: Session) -> list[str]:
+    """이 프로세스에서 실행 중이 아닌 pending/running run 을 `interrupted` 로 바꾼다(서버 시작 시 호출)."""
+    ids: list[str] = []
+    for run in session.scalars(select(AnalysisRun).where(AnalysisRun.status.in_(("pending", "running")))):
+        if is_active(run.run_id):
+            continue
+        run.status = "interrupted"
+        run.stage = INTERRUPTED_STAGE
+        ids.append(run.run_id)
+    session.commit()
+    return ids
+
+
+def resume_run(session: Session, run_id: str) -> AnalysisRun:
+    """`interrupted` run 을 같은 run_id 로 이어서 실행(백그라운드). ValueError=상태 불가, LookupError=없음."""
+    run = session.get(AnalysisRun, run_id)
+    if run is None:
+        raise LookupError("run 없음")
+    if run.status != "interrupted" or is_active(run_id):
+        raise ValueError(f"이어서 실행할 수 없는 상태입니다: {run.status} (중단된 run 만 가능)")
+    run.status = "pending"
+    run.stage = "resume"
+    session.commit()
+    start_run_background(run_id)
+    return run
+
+
+def resume_interrupted_runs() -> list[str]:
+    """서버 시작 훅: 중단 감지 후 `LOTTO_AUTO_RESUME_RUNS` 면 자동 재개. 재개(또는 표시)한 run_id 목록 반환."""
+    with SessionLocal() as session:
+        ids = mark_interrupted_runs(session)
+        if settings.lotto_auto_resume_runs:
+            for rid in ids:
+                resume_run(session, rid)
+    return ids
 
 
 def _update(session: Session, run: AnalysisRun, progress: float, stage: str) -> None:
@@ -150,7 +208,7 @@ def execute_run(run_id: str) -> None:
             run.status = "running"
             _update(session, run, 0.0, "load")
             ds = load_draws(session, run.draw_from, run.draw_to)
-            results = compute_all(ds, run, lambda p, s: _update(session, run, p, s))
+            results = compute_all(ds, run, lambda p, s: _update(session, run, p, s), checkpoint=checkpoint_path(run_id))
             session.execute(delete(AnalysisResult).where(AnalysisResult.run_id == run_id))
             prev = previous_done_run(session, run)
             results["diff_vs_previous"] = (
@@ -166,6 +224,7 @@ def execute_run(run_id: str) -> None:
             run.status = "done"
             run.finished_at = datetime.now(UTC)
             _update(session, run, 1.0, "done")
+            discard_checkpoint(run_id)
             prune_runs(session)
         except Exception as e:  # noqa: BLE001
             session.rollback()
@@ -175,12 +234,13 @@ def execute_run(run_id: str) -> None:
                 run.error = f"{type(e).__name__}: {e}"
                 run.finished_at = datetime.now(UTC)
                 session.commit()
+            discard_checkpoint(run_id)
         finally:
             with _lock:
                 _active.pop(run_id, None)
 
 
-def compute_all(ds: DrawSet, run: AnalysisRun, report) -> dict:  # noqa: ANN001
+def compute_all(ds: DrawSet, run: AnalysisRun, report, checkpoint: Path | None = None) -> dict:  # noqa: ANN001
     alpha = run.alpha
     x = ds.incidence
     xb = ds.bonus_incidence
@@ -195,6 +255,7 @@ def compute_all(ds: DrawSet, run: AnalysisRun, report) -> dict:  # noqa: ANN001
         chunk=64,
         progress=lambda f: report(0.02 + 0.55 * f, f"monte_carlo {int(f * 100)}%"),
         cross_max_lag=settings.lotto_cross_draw_lag,
+        checkpoint=checkpoint,
     )
     report(0.6, "frequency")
     freq = frequency.number_frequency(x, "main", GAME, alpha)

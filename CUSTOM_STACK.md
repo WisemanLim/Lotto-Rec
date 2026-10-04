@@ -40,7 +40,7 @@
 
 ```bash
 make preflight      # 도구 점검
-make local-build    # uv sync + pnpm install (+ .env.local 생성)
+make local-install  # uv sync + pnpm install (+ .env.local 생성)  ※ v1.32: local-build 는 docker 빌드·구동으로 변경
 make db-migrate     # SQLite 생성 (초기 리비전은 구현 단계에서 autogenerate)
 make local-all      # backend :8000 + frontend :5173
 make test           # 스모크 + 이론값 테스트

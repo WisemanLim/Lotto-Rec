@@ -28,6 +28,14 @@ def _no_real_env_local_writes(monkeypatch, tmp_path):  # noqa: ANN001, ANN201
     fake = tmp_path / ".env.local"
     fake.write_text("LOTTO_RANDOM_SEED=0\n", encoding="utf-8")
     monkeypatch.setattr(env_file, "ENV_LOCAL_PATH", fake)
+    # v1.32: SEED 탐색 종료 스냅샷도 실제 data/cache 대신 임시 경로로
+    from app.services import seed_search_service
+
+    monkeypatch.setattr(seed_search_service, "SNAPSHOT_DIR", tmp_path / "seed_search")
+    # v1.33: 분석 run MC 체크포인트도 임시 경로로
+    from app.services import analysis_service
+
+    monkeypatch.setattr(analysis_service, "CHECKPOINT_DIR", tmp_path / "runs")
 
 
 @pytest.fixture(scope="session")

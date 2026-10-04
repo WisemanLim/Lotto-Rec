@@ -9,14 +9,20 @@ DB 에 저장하지 않는(재시작 시 소멸) 인메모리 잡이다.
 재표본·당첨자수 모형 후보 랭킹은 적용하지 않고, 전략별 기본 가중치 벡터로 1회 비복원추출만 한다
 (hybrid→bayesian_shrink, low_competition→uniform 대체 — winners_model 미보유 시 실제 로직의
 기존 폴백과 동일). pair_association 만 기본 파라미터의 순차 Lift 가중을 그대로 적용한다.
+
+(v1.32) 종료된 잡(done/stopped/error)은 `data/cache/seed_search/<job_id>.json` 스냅샷으로도 남긴다.
+done 시 `.env.local` 갱신이 local(honcho) 의 uvicorn `--reload` 를 유발해 인메모리 잡이 사라져도,
+상태 조회가 스냅샷으로 결과를 계속 돌려주게 하기 위함이다(스냅샷은 `.env.local` 갱신 **전에** 기록).
 """
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 from sqlalchemy.orm import Session
@@ -82,6 +88,33 @@ class SeedSearchJob:
 
 _lock = threading.Lock()
 _jobs: dict[str, SeedSearchJob] = {}
+SNAPSHOT_DIR: Path | None = None  # None → settings.cache_dir_path / "seed_search" (테스트는 임시 경로로 치환)
+
+
+def _snapshot_path(job_id: str) -> Path:
+    base = SNAPSHOT_DIR if SNAPSHOT_DIR is not None else settings.cache_dir_path / "seed_search"
+    return base / f"{job_id}.json"
+
+
+def _write_snapshot(job: SeedSearchJob, **overrides: object) -> None:
+    """종료된 잡 상태(+overrides)를 파일로 남긴다 — 실패해도 탐색 결과(인메모리)는 유지."""
+    try:
+        path = _snapshot_path(job.job_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with _lock:
+            data = job.to_dict() | overrides
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _read_snapshot(job_id: str) -> dict | None:
+    try:
+        uuid.UUID(job_id)  # 경로 조작 방지 — job_id 는 항상 uuid4
+        data = json.loads(_snapshot_path(job_id).read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def _prune_locked(now: float) -> None:
@@ -99,11 +132,22 @@ def get_job(job_id: str) -> SeedSearchJob | None:
         return _jobs.get(job_id)
 
 
-def stop_job(job_id: str) -> SeedSearchJob | None:
+def get_status(job_id: str) -> dict | None:
+    """인메모리 잡 → 없으면 종료 스냅샷(재기동 후) 순으로 상태를 찾는다."""
     job = get_job(job_id)
     if job is not None:
-        job.stop_event.set()
-    return job
+        with _lock:
+            return job.to_dict()
+    return _read_snapshot(job_id)
+
+
+def stop_job(job_id: str) -> dict | None:
+    job = get_job(job_id)
+    if job is None:
+        return _read_snapshot(job_id)  # 이미 종료된 잡 — 중지할 것 없이 최종 상태 반환
+    job.stop_event.set()
+    with _lock:
+        return job.to_dict()
 
 
 def _build_pickers(ctx: strat.Context) -> tuple[list[str], dict[str, np.ndarray], np.ndarray | None]:
@@ -142,18 +186,24 @@ def _run(job: SeedSearchJob, ctx: strat.Context, compare_main: set[int], compare
             m = len(compare_main.intersection(ticket.tolist()))
             b = compare_bonus in ticket
             if rank_of(m, b) == job.target_rank:
-                try:
-                    env_updated = update_env_local("LOTTO_RANDOM_SEED", str(iterations))
-                except OSError:
-                    env_updated = False
                 with _lock:
                     job.iterations = iterations
                     job.seed = iterations
                     job.matched_strategy = name
                     job.matched_ticket = sorted(int(x) for x in ticket)
+                    job.finished_at = time.monotonic()
+                # 순서 중요(v1.32): 스냅샷 → .env.local. 갱신이 uvicorn --reload 로 이 프로세스를 끝내도
+                # 결과는 스냅샷에 남는다(갱신 직후 종료될 수 있어 env_updated=True 로 미리 기록, 실패 시 정정).
+                _write_snapshot(job, status="done", env_updated=True)
+                try:
+                    env_updated = update_env_local("LOTTO_RANDOM_SEED", str(iterations))
+                except OSError:
+                    env_updated = False
+                with _lock:
                     job.env_updated = env_updated
                     job.status = "done"
-                    job.finished_at = time.monotonic()
+                if not env_updated:
+                    _write_snapshot(job)
                 return
             if iterations % report_every == 0:
                 with _lock:
@@ -163,11 +213,13 @@ def _run(job: SeedSearchJob, ctx: strat.Context, compare_main: set[int], compare
             job.status = "stopped"
             job.stop_reason = "user" if job.stop_event.is_set() else "max_iterations"
             job.finished_at = time.monotonic()
+        _write_snapshot(job)
     except Exception as e:  # noqa: BLE001 — 백그라운드 스레드 최상위: 실패를 잡 상태로 남긴다
         with _lock:
             job.status = "error"
             job.error = str(e)
             job.finished_at = time.monotonic()
+        _write_snapshot(job)
 
 
 def start_seed_search(session: Session, *, target_draw_no: int | None, target_rank: int) -> dict:

@@ -80,6 +80,7 @@ export interface AppConfig {
   lotto_cross_draw_lag?: number;
   lotto_min_effect_delta?: number;
   lotto_run_retention?: number;
+  lotto_auto_resume_runs?: boolean;
   lotto_recent_draws?: number;
   lotto_exclude_trend_draws?: number;
   lotto_exclude_recent_draws?: number;
@@ -94,7 +95,7 @@ export interface AppConfig {
 export type Cohort = 'A' | 'B' | 'ALL';
 export type Preset = 'quick' | 'report' | 'deep';
 export type Correction = 'bonferroni' | 'holm' | 'fdr_bh' | 'fdr_by';
-export type JobStatus = 'pending' | 'running' | 'done' | 'error';
+export type JobStatus = 'pending' | 'running' | 'done' | 'error' | 'interrupted'; // interrupted: 서버 재기동으로 중단(분석 run, S2.14)
 
 // ---------- 데이터 ----------
 export interface DataSummary {
@@ -1200,6 +1201,8 @@ export const api = {
     run: (runId: string) => get<RunMeta>(`/api/v1/analysis/runs/${runId}`),
     create: (body: RunCreate) => post<RunMeta>('/api/v1/analysis/runs', body),
     remove: (runId: string) => del<unknown>(`/api/v1/analysis/runs/${runId}`),
+    // S2.14 서버 재기동으로 중단된 run 을 MC 체크포인트부터 이어서 실행
+    resume: (runId: string) => post<RunMeta>(`/api/v1/analysis/runs/${runId}/resume`, {}),
     section: <T = unknown>(runId: string, section: Section) =>
       get<T>(`/api/v1/analysis/runs/${runId}/${section}`),
     itemsetQuery: (body: ItemsetQuery) => post<ItemsetQueryResult>('/api/v1/analysis/itemsets/query', body),

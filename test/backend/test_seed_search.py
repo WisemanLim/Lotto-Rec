@@ -123,3 +123,44 @@ def test_seed_search_ignores_exclude_numbers_even_if_sent(seeded: None, client) 
     done = _poll(client, r.json()["job_id"])
     assert done["status"] == "done"
     assert set(done["matched_ticket"]) & set(draw["numbers"])  # 실제 번호가 포함된 조합을 맞힘 (제외 미적용 증명)
+
+
+def test_seed_search_status_survives_restart_via_snapshot(seeded: None, client) -> None:  # noqa: ANN001
+    """v1.32 버그 수정 — done 시 `.env.local` 갱신이 local uvicorn --reload 를 유발해 인메모리 잡이 사라져도
+    (재기동 = `_jobs` 비움) 상태 조회·중지가 종료 스냅샷으로 같은 결과를 돌려준다(이전에는 404)."""
+    from app.services import seed_search_service as ssvc
+
+    r = client.post("/api/v1/recommend/seed-search", json={"target_draw_no": 1000, "target_rank": 5})
+    job_id = r.json()["job_id"]
+    done = _poll(client, job_id)
+    assert done["status"] == "done"
+
+    with ssvc._lock:
+        ssvc._jobs.clear()  # 프로세스 재기동 모사
+    after = client.get(f"/api/v1/recommend/seed-search/{job_id}")
+    assert after.status_code == 200
+    body = after.json()
+    assert body["status"] == "done" and body["seed"] == done["seed"]
+    assert body["matched_ticket"] == done["matched_ticket"] and body["env_updated"] is True
+    stop = client.post(f"/api/v1/recommend/seed-search/{job_id}/stop")
+    assert stop.status_code == 200 and stop.json()["status"] == "done"
+
+
+def test_seed_search_snapshot_written_before_env_local(seeded: None, client, monkeypatch) -> None:  # noqa: ANN001
+    """v1.32 — 스냅샷은 `.env.local` 갱신 **전에** 기록돼야 한다(갱신 즉시 재기동돼도 결과 보존)."""
+    from app.services import seed_search_service as ssvc
+
+    seen: list[bool] = []
+
+    def fake_update(key: str, value: str) -> bool:
+        seen.append(any(ssvc._snapshot_path(j).exists() for j in list(ssvc._jobs)))
+        return True
+
+    monkeypatch.setattr(ssvc, "update_env_local", fake_update)
+    r = client.post("/api/v1/recommend/seed-search", json={"target_draw_no": 1000, "target_rank": 5})
+    assert _poll(client, r.json()["job_id"])["status"] == "done"
+    assert seen == [True]
+
+
+def test_seed_search_snapshot_rejects_non_uuid_job_id(seeded: None, client) -> None:  # noqa: ANN001
+    assert client.get("/api/v1/recommend/seed-search/..%2F..%2Fetc").status_code == 404

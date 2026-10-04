@@ -72,13 +72,26 @@ def get_run(run_id: str, session: Session = Depends(get_session)) -> dict:
     return svc.run_to_dict(r)
 
 
+@router.post("/runs/{run_id}/resume")
+def resume_run(run_id: str, session: Session = Depends(get_session)) -> dict:
+    """S2.14 — 서버 재기동으로 중단된(interrupted) run 을 MC 체크포인트부터 같은 run_id 로 이어서 실행."""
+    try:
+        run = svc.resume_run(session, run_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+    return svc.run_to_dict(run)
+
+
 @router.delete("/runs/{run_id}")
 def delete_run(run_id: str, session: Session = Depends(get_session)) -> dict:
     r = svc.get_run(session, run_id)
     if r is None:
         raise HTTPException(404, "run 없음")
-    if r.status == "running":
+    if r.status in ("pending", "running") and svc.is_active(run_id):
         raise HTTPException(409, "실행 중인 run 은 삭제 불가")
+    svc.discard_checkpoint(run_id)
     from app.db.models import AnalysisResult
 
     session.execute(delete(AnalysisResult).where(AnalysisResult.run_id == run_id))

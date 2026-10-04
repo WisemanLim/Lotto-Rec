@@ -128,10 +128,12 @@ def draws_to_incidence(draws: np.ndarray, N: int) -> np.ndarray:
 
 
 def iter_null_chunks(
-    seed: int, n_sims: int, T: int, game: Game = GAME, chunk: int = 64
+    seed: int, n_sims: int, T: int, game: Game = GAME, chunk: int = 64, rng: np.random.Generator | None = None
 ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
-    """청크 단위 (draws, incidence) 생성기 — 메모리 제한 하에 B 회 반복."""
-    rng = np.random.default_rng(seed)
+    """청크 단위 (draws, incidence) 생성기 — 메모리 제한 하에 B 회 반복.
+
+    `rng` 를 주면 seed 대신 그 생성기를 이어서 쓴다(체크포인트 재개 — S2.14)."""
+    rng = np.random.default_rng(seed) if rng is None else rng
     done = 0
     while done < n_sims:
         s = min(chunk, n_sims - done)

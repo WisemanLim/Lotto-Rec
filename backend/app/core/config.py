@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     lotto_cross_draw_lag: int = Field(default=5, ge=1, le=50)  # 회차간 전/후 간격 L (S2.13)
     lotto_auto_rerun_preset: Literal["quick", "report", "deep", "off"] = "quick"
     lotto_run_retention: int = Field(default=20, ge=0)
+    lotto_auto_resume_runs: bool = True  # 서버 시작 시 중단된(interrupted) 분석 run 자동 이어서 실행 (S2.14)
     lotto_lottery_pick_count: int = Field(default=5, ge=1, le=50)  # 내 번호 '등록된 번호로 추첨 시도' 선택 개수 (S5.5)
     lotto_seed_search_max_iter: int = Field(default=20_000_000, ge=1000)  # SEED 값 생성 무작위 탐색 상한 (S4.13)
     lotto_recent_draws: int = Field(default=5, ge=1, le=20)  # 내 번호 최근 당첨번호 회차 수 (S5.8)
